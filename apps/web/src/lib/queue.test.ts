@@ -72,4 +72,12 @@ describe("enqueueWorkflowJob", () => {
       enqueueWorkflowJob({ taskId: "task_1", workflowType: "pdf_to_ppt" })
     ).rejects.toBe(error);
   });
+
+  it("does not reject when the job is enqueued but closing the Redis connection fails", async () => {
+    redisMock.quit.mockRejectedValueOnce(new Error("quit failed"));
+
+    await expect(
+      enqueueWorkflowJob({ taskId: "task_1", workflowType: "pdf_to_ppt" })
+    ).resolves.toBeUndefined();
+  });
 });

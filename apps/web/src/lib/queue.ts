@@ -14,18 +14,15 @@ export function buildWorkflowJob(input: WorkflowJobInput) {
 
 export async function enqueueWorkflowJob(input: WorkflowJobInput) {
   const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379/0");
-  let streamError: unknown;
   try {
     const job = buildWorkflowJob(input);
     await redis.xadd("workflow_jobs", "*", "payload", JSON.stringify(job));
-  } catch (error) {
-    streamError = error;
-    throw error;
   } finally {
     try {
       await redis.quit();
-    } catch (error) {
-      if (streamError === undefined) throw error;
+    } catch {
+      // Cleanup failures are non-fatal: a successful xadd is durable, and an xadd
+      // failure should propagate as the enqueue error.
     }
   }
 }
