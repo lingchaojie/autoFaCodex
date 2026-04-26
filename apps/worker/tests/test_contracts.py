@@ -29,7 +29,7 @@ def test_task_manifest_rejects_unknown_extra_field():
         )
 
 
-def test_slide_model_rejects_full_page_raster_as_declared_fallback():
+def test_slide_model_accepts_empty_editable_elements_and_fallbacks():
     model = SlideModel(
         slides=[
             {
