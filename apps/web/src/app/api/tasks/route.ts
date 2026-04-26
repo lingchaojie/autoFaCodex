@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { getSessionUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { parseJsonBody } from "@/lib/http";
-import { initialTaskStatus, pdfToPptWorkflowType } from "@/lib/tasks";
-
-const bodySchema = z.object({
-  inputFilePath: z.string().min(1)
-});
+import { enqueueWorkflowJob } from "@/lib/queue";
+import { pdfToPptWorkflowType, queuedTaskStatus, writeInputPdf } from "@/lib/tasks";
 
 export async function GET() {
   const userId = await getSessionUserId();
@@ -25,18 +20,33 @@ export async function POST(request: Request) {
   const userId = await getSessionUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const parsed = await parseJsonBody(request, bodySchema);
-  if (!parsed.ok) return parsed.response;
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return NextResponse.json({ error: "PDF file is required" }, { status: 400 });
+  }
 
-  const body = parsed.data;
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.type !== "application/pdf") {
+    return NextResponse.json({ error: "PDF file is required" }, { status: 400 });
+  }
+
   const task = await prisma.workflowTask.create({
     data: {
       userId,
       workflowType: pdfToPptWorkflowType,
-      status: initialTaskStatus,
-      inputFilePath: body.inputFilePath
+      status: queuedTaskStatus,
+      inputFilePath: ""
     }
   });
+
+  const inputFilePath = await writeInputPdf(task.id, await file.arrayBuffer());
+  await prisma.workflowTask.update({
+    where: { id: task.id },
+    data: { inputFilePath }
+  });
+  await enqueueWorkflowJob({ taskId: task.id, workflowType: pdfToPptWorkflowType });
 
   return NextResponse.json({ taskId: task.id });
 }
