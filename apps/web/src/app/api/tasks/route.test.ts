@@ -24,6 +24,7 @@ vi.mock("@/lib/queue", () => ({
 }));
 
 vi.mock("@/lib/tasks", () => ({
+  initialTaskStatus: "created",
   pdfToPptWorkflowType: "pdf_to_ppt",
   queuedTaskStatus: "queued",
   writeInputPdf: vi.fn()
@@ -87,14 +88,50 @@ describe("/api/tasks", () => {
     expect(createTask).not.toHaveBeenCalled();
   });
 
+  test("POST returns 400 for an empty PDF upload before creating a task", async () => {
+    sessionUserId.mockResolvedValueOnce("user_1");
+
+    const response = await POST(
+      multipartRequest(new File([], "input.pdf", { type: "application/pdf" }))
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "PDF file is required" });
+    expect(createTask).not.toHaveBeenCalled();
+  });
+
+  test("POST returns 400 when uploaded bytes are not a PDF before creating a task", async () => {
+    sessionUserId.mockResolvedValueOnce("user_1");
+
+    const response = await POST(
+      multipartRequest(new File(["not a pdf"], "input.pdf", { type: "application/pdf" }))
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "PDF file is required" });
+    expect(createTask).not.toHaveBeenCalled();
+  });
+
   test("POST stores a PDF upload, updates the task path, and enqueues the workflow", async () => {
     sessionUserId.mockResolvedValueOnce("user_1");
     createTask.mockResolvedValueOnce({
       id: "task_1",
       userId: "user_1",
       workflowType: "pdf_to_ppt",
-      status: "queued",
+      status: "created",
       inputFilePath: "",
+      outputFilePath: null,
+      currentAttempt: 1,
+      maxAttempts: 3,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    updateTask.mockResolvedValueOnce({
+      id: "task_1",
+      userId: "user_1",
+      workflowType: "pdf_to_ppt",
+      status: "created",
+      inputFilePath: "/shared/tasks/task_1/input.pdf",
       outputFilePath: null,
       currentAttempt: 1,
       maxAttempts: 3,
@@ -125,15 +162,56 @@ describe("/api/tasks", () => {
       data: {
         userId: "user_1",
         workflowType: "pdf_to_ppt",
-        status: "queued",
+        status: "created",
         inputFilePath: ""
       }
     });
     expect(writePdf).toHaveBeenCalledWith("task_1", expect.any(ArrayBuffer));
-    expect(updateTask).toHaveBeenCalledWith({
+    expect(updateTask).toHaveBeenNthCalledWith(1, {
       where: { id: "task_1" },
       data: { inputFilePath: "/shared/tasks/task_1/input.pdf" }
     });
     expect(enqueueJob).toHaveBeenCalledWith({ taskId: "task_1", workflowType: "pdf_to_ppt" });
+    expect(updateTask).toHaveBeenNthCalledWith(2, {
+      where: { id: "task_1" },
+      data: { status: "queued" }
+    });
+  });
+
+  test("POST marks the task failed and returns 500 when enqueue fails", async () => {
+    sessionUserId.mockResolvedValueOnce("user_1");
+    createTask.mockResolvedValueOnce({
+      id: "task_1",
+      userId: "user_1",
+      workflowType: "pdf_to_ppt",
+      status: "created",
+      inputFilePath: "",
+      outputFilePath: null,
+      currentAttempt: 1,
+      maxAttempts: 3,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    writePdf.mockResolvedValueOnce("/shared/tasks/task_1/input.pdf");
+    enqueueJob.mockRejectedValueOnce(new Error("redis unavailable"));
+
+    const response = await POST(
+      multipartRequest(new File(["%PDF-1.7"], "input.pdf", { type: "application/pdf" }))
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: "Failed to enqueue workflow" });
+    expect(updateTask).toHaveBeenNthCalledWith(1, {
+      where: { id: "task_1" },
+      data: { inputFilePath: "/shared/tasks/task_1/input.pdf" }
+    });
+    expect(updateTask).toHaveBeenNthCalledWith(2, {
+      where: { id: "task_1" },
+      data: { status: "failed" }
+    });
+    expect(updateTask).not.toHaveBeenCalledWith({
+      where: { id: "task_1" },
+      data: { status: "queued" }
+    });
   });
 });

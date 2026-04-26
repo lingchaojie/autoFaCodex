@@ -2,7 +2,19 @@ import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { enqueueWorkflowJob } from "@/lib/queue";
-import { pdfToPptWorkflowType, queuedTaskStatus, writeInputPdf } from "@/lib/tasks";
+import {
+  initialTaskStatus,
+  pdfToPptWorkflowType,
+  queuedTaskStatus,
+  writeInputPdf
+} from "@/lib/tasks";
+
+const pdfMagicBytes = new TextEncoder().encode("%PDF-");
+
+function isPdf(bytes: ArrayBuffer) {
+  const view = new Uint8Array(bytes);
+  return pdfMagicBytes.every((byte, index) => view[index] === byte);
+}
 
 export async function GET() {
   const userId = await getSessionUserId();
@@ -32,21 +44,42 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "PDF file is required" }, { status: 400 });
   }
 
+  const bytes = await file.arrayBuffer();
+  if (bytes.byteLength === 0 || !isPdf(bytes)) {
+    return NextResponse.json({ error: "PDF file is required" }, { status: 400 });
+  }
+
   const task = await prisma.workflowTask.create({
     data: {
       userId,
       workflowType: pdfToPptWorkflowType,
-      status: queuedTaskStatus,
+      status: initialTaskStatus,
       inputFilePath: ""
     }
   });
 
-  const inputFilePath = await writeInputPdf(task.id, await file.arrayBuffer());
-  await prisma.workflowTask.update({
-    where: { id: task.id },
-    data: { inputFilePath }
-  });
-  await enqueueWorkflowJob({ taskId: task.id, workflowType: pdfToPptWorkflowType });
+  try {
+    const inputFilePath = await writeInputPdf(task.id, bytes);
+    await prisma.workflowTask.update({
+      where: { id: task.id },
+      data: { inputFilePath }
+    });
+    await enqueueWorkflowJob({ taskId: task.id, workflowType: pdfToPptWorkflowType });
+    await prisma.workflowTask.update({
+      where: { id: task.id },
+      data: { status: queuedTaskStatus }
+    });
+  } catch {
+    try {
+      await prisma.workflowTask.update({
+        where: { id: task.id },
+        data: { status: "failed" }
+      });
+    } catch {
+      // Keep the upload endpoint response stable even if failure recording also fails.
+    }
+    return NextResponse.json({ error: "Failed to enqueue workflow" }, { status: 500 });
+  }
 
   return NextResponse.json({ taskId: task.id });
 }
