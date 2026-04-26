@@ -127,3 +127,23 @@ def test_inspect_pptx_editability_counts_slide_xml_nodes_and_ignores_non_slides(
             }
         ]
     }
+
+
+def test_inspect_pptx_editability_sorts_slides_numerically(tmp_path: Path):
+    pptx = tmp_path / "deck.pptx"
+    slide_xml = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" />
+"""
+    with ZipFile(pptx, "w") as archive:
+        archive.writestr("ppt/slides/slide1.xml", slide_xml)
+        archive.writestr("ppt/slides/slide10.xml", slide_xml)
+        archive.writestr("ppt/slides/slide2.xml", slide_xml)
+
+    report = inspect_pptx_editability(pptx)
+
+    assert [page["slide"] for page in report["pages"]] == [
+        "ppt/slides/slide1.xml",
+        "ppt/slides/slide2.xml",
+        "ppt/slides/slide10.xml",
+    ]
