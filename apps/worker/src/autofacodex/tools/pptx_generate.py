@@ -6,8 +6,19 @@ from pptx.util import Inches, Pt
 from autofacodex.contracts import SlideModel
 
 
+def _validate_single_slide_size(model: SlideModel) -> None:
+    if not model.slides:
+        return
+
+    expected_size = model.slides[0].size
+    for slide_spec in model.slides[1:]:
+        if slide_spec.size != expected_size:
+            raise ValueError("All slides must use the same size before PPTX generation")
+
+
 def generate_pptx(model: SlideModel, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    _validate_single_slide_size(model)
     presentation = Presentation()
     if model.slides:
         presentation.slide_width = Inches(model.slides[0].size.width)
