@@ -1,16 +1,18 @@
+import sys
 import time
 from pathlib import Path
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import Field
 
 from autofacodex.config import load_config
-from autofacodex.contracts import TaskManifest
+from autofacodex.contracts import ContractModel, TaskManifest
 from autofacodex.workflows.pdf_to_ppt import run_pdf_to_ppt
 
 
-class WorkflowJob(BaseModel):
-    task_id: str
-    workflow_type: str
+class WorkflowJob(ContractModel):
+    task_id: str = Field(min_length=1)
+    workflow_type: Literal["pdf_to_ppt"]
 
 
 def parse_job_payload(payload: str) -> WorkflowJob:
@@ -33,11 +35,18 @@ def write_task_manifest(task_dir: Path, task_id: str, attempt: int, max_attempts
 def run_once(payload: str) -> None:
     config = load_config()
     job = parse_job_payload(payload)
-    if job.workflow_type != "pdf_to_ppt":
-        raise ValueError(f"Unsupported workflow_type: {job.workflow_type}")
     task_dir = config.shared_tasks_dir / job.task_id
     write_task_manifest(task_dir, job.task_id, attempt=1, max_attempts=3)
     run_pdf_to_ppt(task_dir)
+
+
+def process_message(client, stream: str, group: str, message_id: str, fields: dict[str, str]) -> None:
+    try:
+        run_once(fields["payload"])
+    except Exception as exc:
+        print(f"Failed to process message {message_id}: {exc}", file=sys.stderr)
+        return
+    client.xack(stream, group, message_id)
 
 
 def main() -> None:
@@ -60,8 +69,7 @@ def main() -> None:
             continue
         for _, entries in messages:
             for message_id, fields in entries:
-                run_once(fields["payload"])
-                client.xack(stream, group, message_id)
+                process_message(client, stream, group, message_id, fields)
 
 
 if __name__ == "__main__":
