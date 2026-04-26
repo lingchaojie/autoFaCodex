@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 import fitz
@@ -5,7 +6,9 @@ import pytest
 from pptx import Presentation
 from reportlab.pdfgen import canvas
 
+from autofacodex.config import WorkerConfig
 from autofacodex.contracts import SlideModel, ValidatorReport
+import autofacodex.workflows.pdf_to_ppt as workflow
 from autofacodex.workflows.pdf_to_ppt import run_pdf_to_ppt
 
 
@@ -87,3 +90,105 @@ def test_run_pdf_to_ppt_rejects_nonexistent_pdf_render_paths(
 
     assert not (task_dir / "output" / "candidate.v1.pptx").exists()
     assert not (task_dir / "reports" / "validator.v1.json").exists()
+
+
+def test_run_pdf_to_ppt_repair_invokes_runner_then_validator_and_logs_results(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    task_dir = tmp_path / "task_1"
+    task_dir.mkdir()
+    (task_dir / "task-manifest.json").write_text("{}", encoding="utf-8")
+    (task_dir / "conversation").mkdir()
+    (task_dir / "conversation" / "messages.jsonl").write_text(
+        '{"role":"user","content":"Fix slide 2","createdAt":"2026-04-26T12:00:00.000Z"}\n',
+        encoding="utf-8",
+    )
+    config = WorkerConfig(
+        redis_url="redis://example",
+        shared_tasks_dir=tmp_path,
+        codex_home=tmp_path / "codex-home",
+        codex_bin="codex-test",
+    )
+    calls = []
+    results = [
+        subprocess.CompletedProcess(
+            args=["codex-test"], returncode=0, stdout="runner stdout", stderr="runner stderr"
+        ),
+        subprocess.CompletedProcess(
+            args=["codex-test"],
+            returncode=0,
+            stdout="validator stdout",
+            stderr="validator stderr",
+        ),
+    ]
+
+    def fail_initial_extraction(*_args, **_kwargs):
+        raise AssertionError("repair mode must not run deterministic initial extraction")
+
+    def fake_run_codex_agent(invocation, message: str):
+        calls.append((invocation, message))
+        return results.pop(0)
+
+    monkeypatch.setattr(workflow, "extract_pdf", fail_initial_extraction)
+    monkeypatch.setattr(workflow, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(workflow, "run_codex_agent", fake_run_codex_agent, raising=False)
+
+    run_pdf_to_ppt(task_dir, mode="repair")
+
+    assert [call[0].role for call in calls] == ["runner", "validator"]
+    assert [call[0].task_dir for call in calls] == [task_dir, task_dir]
+    assert calls[0][0].codex_home == config.codex_home
+    assert calls[0][0].codex_bin == "codex-test"
+    assert calls[0][0].system_prompt.as_posix().endswith(
+        "agent_assets/runner/runner.system.md"
+    )
+    assert calls[0][0].skill_dir.as_posix().endswith("agent_assets/runner")
+    assert calls[1][0].system_prompt.as_posix().endswith(
+        "agent_assets/validator/validator.system.md"
+    )
+    assert calls[1][0].skill_dir.as_posix().endswith("agent_assets/validator")
+    assert "task-manifest.json" in calls[0][1]
+    assert "latest reports/validator.v*.json" in calls[0][1]
+    assert "latest slides/slide-model.v*.json" in calls[0][1]
+    assert "conversation/messages.jsonl" in calls[0][1]
+    assert "produce a revised slide model" in calls[0][1]
+    assert "validate every page after repair" in calls[1][1]
+    assert "reports/validator.vN.json" in calls[1][1]
+    assert (task_dir / "logs" / "runner-repair.log").read_text(encoding="utf-8") == (
+        "returncode: 0\nstdout:\nrunner stdout\nstderr:\nrunner stderr\n"
+    )
+    assert (task_dir / "logs" / "validator-repair.log").read_text(encoding="utf-8") == (
+        "returncode: 0\nstdout:\nvalidator stdout\nstderr:\nvalidator stderr\n"
+    )
+
+
+def test_run_pdf_to_ppt_repair_runner_failure_prevents_validator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    task_dir = tmp_path / "task_1"
+    task_dir.mkdir()
+    config = WorkerConfig(
+        redis_url="redis://example",
+        shared_tasks_dir=tmp_path,
+        codex_home=tmp_path / "codex-home",
+        codex_bin="codex-test",
+    )
+    calls = []
+
+    def fake_run_codex_agent(invocation, message: str):
+        calls.append((invocation, message))
+        return subprocess.CompletedProcess(
+            args=["codex-test"], returncode=7, stdout="runner stdout", stderr="runner failed"
+        )
+
+    monkeypatch.setattr(workflow, "load_config", lambda: config, raising=False)
+    monkeypatch.setattr(workflow, "run_codex_agent", fake_run_codex_agent, raising=False)
+
+    with pytest.raises(RuntimeError, match="Runner repair failed with return code 7"):
+        run_pdf_to_ppt(task_dir, mode="repair")
+
+    assert [call[0].role for call in calls] == ["runner"]
+    assert (task_dir / "logs" / "runner-repair.log").read_text(encoding="utf-8") == (
+        "returncode: 7\nstdout:\nrunner stdout\nstderr:\nrunner failed\n"
+    )
+    assert not (task_dir / "logs" / "validator-repair.log").exists()

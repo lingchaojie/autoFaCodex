@@ -13,6 +13,7 @@ from autofacodex.workflows.pdf_to_ppt import run_pdf_to_ppt
 class WorkflowJob(ContractModel):
     task_id: str = Field(min_length=1)
     workflow_type: Literal["pdf_to_ppt"]
+    mode: Literal["initial", "repair"] = "initial"
 
 
 def parse_job_payload(payload: str) -> WorkflowJob:
@@ -37,7 +38,7 @@ def run_once(payload: str) -> None:
     job = parse_job_payload(payload)
     task_dir = config.shared_tasks_dir / job.task_id
     write_task_manifest(task_dir, job.task_id, attempt=1, max_attempts=3)
-    run_pdf_to_ppt(task_dir)
+    run_pdf_to_ppt(task_dir, mode=job.mode)
 
 
 def process_message(client, stream: str, group: str, message_id: str, fields: dict[str, str]) -> None:

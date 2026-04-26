@@ -3,12 +3,14 @@ import Redis from "ioredis";
 export type WorkflowJobInput = {
   taskId: string;
   workflowType: "pdf_to_ppt";
+  mode?: "initial" | "repair";
 };
 
 export function buildWorkflowJob(input: WorkflowJobInput) {
   return {
     task_id: input.taskId,
-    workflow_type: input.workflowType
+    workflow_type: input.workflowType,
+    mode: input.mode ?? "initial"
   };
 }
 

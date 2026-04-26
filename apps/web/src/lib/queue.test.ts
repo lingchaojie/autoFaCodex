@@ -24,11 +24,26 @@ beforeEach(() => {
 });
 
 describe("buildWorkflowJob", () => {
-  it("creates a language-neutral pdf_to_ppt job payload", () => {
+  it("creates a language-neutral initial pdf_to_ppt job payload by default", () => {
     const job = buildWorkflowJob({ taskId: "task_1", workflowType: "pdf_to_ppt" });
     expect(job).toEqual({
       task_id: "task_1",
-      workflow_type: "pdf_to_ppt"
+      workflow_type: "pdf_to_ppt",
+      mode: "initial"
+    });
+  });
+
+  it("creates a repair pdf_to_ppt job payload", () => {
+    const job = buildWorkflowJob({
+      taskId: "task_1",
+      workflowType: "pdf_to_ppt",
+      mode: "repair"
+    });
+
+    expect(job).toEqual({
+      task_id: "task_1",
+      workflow_type: "pdf_to_ppt",
+      mode: "repair"
     });
   });
 });

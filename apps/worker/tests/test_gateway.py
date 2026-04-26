@@ -22,6 +22,26 @@ def test_parse_job_payload():
 
     assert job.task_id == "task_1"
     assert job.workflow_type == "pdf_to_ppt"
+    assert job.mode == "initial"
+
+
+def test_parse_job_payload_accepts_repair_mode():
+    payload = json.dumps(
+        {"task_id": "task_1", "workflow_type": "pdf_to_ppt", "mode": "repair"}
+    )
+
+    job = parse_job_payload(payload)
+
+    assert job.mode == "repair"
+
+
+def test_parse_job_payload_rejects_invalid_mode():
+    payload = json.dumps(
+        {"task_id": "task_1", "workflow_type": "pdf_to_ppt", "mode": "unsupported"}
+    )
+
+    with pytest.raises(ValidationError):
+        parse_job_payload(payload)
 
 
 def test_parse_job_payload_rejects_extra_fields():
@@ -72,6 +92,27 @@ def test_run_once_writes_manifest_and_workflow_artifacts(
     )
     assert (task_dir / "output" / "candidate.v1.pptx").is_file()
     assert (task_dir / "reports" / "validator.v1.json").is_file()
+
+
+def test_run_once_passes_repair_mode_to_workflow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    task_dir = tmp_path / "task_1"
+    task_dir.mkdir()
+    monkeypatch.setenv("SHARED_TASKS_DIR", str(tmp_path))
+    calls: list[tuple[Path, str]] = []
+
+    def fake_run_pdf_to_ppt(run_task_dir: Path, mode: str = "initial") -> None:
+        calls.append((run_task_dir, mode))
+
+    monkeypatch.setattr("autofacodex.gateway.run_pdf_to_ppt", fake_run_pdf_to_ppt)
+
+    run_once(
+        json.dumps({"task_id": "task_1", "workflow_type": "pdf_to_ppt", "mode": "repair"})
+    )
+
+    assert (task_dir / "task-manifest.json").is_file()
+    assert calls == [(task_dir, "repair")]
 
 
 class FakeRedisClient:
