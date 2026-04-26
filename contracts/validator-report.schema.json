@@ -1,6 +1,7 @@
 {
   "$defs": {
     "PageValidation": {
+      "additionalProperties": false,
       "properties": {
         "page_number": {
           "minimum": 1,
@@ -61,6 +62,7 @@
       "type": "object"
     },
     "ValidatorIssue": {
+      "additionalProperties": false,
       "properties": {
         "type": {
           "title": "Type",
@@ -80,6 +82,8 @@
               "items": {
                 "type": "number"
               },
+              "maxItems": 4,
+              "minItems": 4,
               "type": "array"
             },
             {
@@ -99,6 +103,7 @@
       "type": "object"
     }
   },
+  "additionalProperties": false,
   "properties": {
     "task_id": {
       "title": "Task Id",

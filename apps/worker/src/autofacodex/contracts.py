@@ -1,9 +1,13 @@
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class TaskManifest(BaseModel):
+class ContractModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class TaskManifest(ContractModel):
     task_id: str
     workflow_type: Literal["pdf_to_ppt"]
     input_pdf: str
@@ -11,12 +15,12 @@ class TaskManifest(BaseModel):
     max_attempts: int = Field(ge=1)
 
 
-class SlideSize(BaseModel):
+class SlideSize(ContractModel):
     width: float = Field(gt=0)
     height: float = Field(gt=0)
 
 
-class SlideElement(BaseModel):
+class SlideElement(ContractModel):
     id: str
     type: Literal["text", "image", "shape", "table", "path"]
     x: float
@@ -28,33 +32,36 @@ class SlideElement(BaseModel):
     style: dict = Field(default_factory=dict)
 
 
-class RasterFallbackRegion(BaseModel):
+class RasterFallbackRegion(ContractModel):
     x: float
     y: float
-    w: float
-    h: float
+    w: float = Field(gt=0)
+    h: float = Field(gt=0)
     reason: str
 
 
-class SlideSpec(BaseModel):
+class SlideSpec(ContractModel):
     page_number: int = Field(ge=1)
     size: SlideSize
     elements: list[SlideElement] = Field(default_factory=list)
     raster_fallback_regions: list[RasterFallbackRegion] = Field(default_factory=list)
 
 
-class SlideModel(BaseModel):
+class SlideModel(ContractModel):
     slides: list[SlideSpec]
 
 
-class ValidatorIssue(BaseModel):
+IssueRegion = Annotated[list[float], Field(min_length=4, max_length=4)]
+
+
+class ValidatorIssue(ContractModel):
     type: str
     message: str
     suggested_action: str
-    region: list[float] | None = None
+    region: IssueRegion | None = None
 
 
-class PageValidation(BaseModel):
+class PageValidation(ContractModel):
     page_number: int = Field(ge=1)
     status: Literal["pass", "repair_needed", "manual_review", "failed"]
     visual_score: float = Field(ge=0, le=1)
@@ -64,7 +71,7 @@ class PageValidation(BaseModel):
     issues: list[ValidatorIssue] = Field(default_factory=list)
 
 
-class ValidatorReport(BaseModel):
+class ValidatorReport(ContractModel):
     task_id: str
     attempt: int = Field(ge=1)
     pages: list[PageValidation]
