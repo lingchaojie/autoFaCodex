@@ -7,7 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     npm \
     && rm -rf /var/lib/apt/lists/*
 
-RUN useradd -m -u 10001 worker
+RUN useradd -m -u 10001 worker \
+    && mkdir -p /shared/tasks \
+    && chown -R worker:worker /shared
 WORKDIR /app/apps/worker
 
 COPY apps/worker/requirements.txt ./

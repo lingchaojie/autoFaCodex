@@ -27,3 +27,12 @@ def test_validate_codex_auth_rejects_missing_auth(tmp_path: Path):
 
     with pytest.raises(FileNotFoundError, match="auth.json"):
         validate_codex_auth(CodexAuthConfig(codex_home=codex_home, codex_bin="codex"))
+
+
+def test_validate_codex_auth_rejects_missing_config(tmp_path: Path):
+    codex_home = tmp_path / ".codex"
+    codex_home.mkdir()
+    (codex_home / "auth.json").write_text('{"ok":true}', encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError, match="config.toml"):
+        validate_codex_auth(CodexAuthConfig(codex_home=codex_home, codex_bin="codex"))
