@@ -10,6 +10,9 @@ def build_validator_report(
     text_scores: dict[int, float],
     raster_ratios: dict[int, float],
 ) -> ValidatorReport:
+    if page_count < 1:
+        raise ValueError("page_count must be at least 1")
+
     pages: list[PageValidation] = []
     for page_number in range(1, page_count + 1):
         visual = visual_scores.get(page_number, 0)

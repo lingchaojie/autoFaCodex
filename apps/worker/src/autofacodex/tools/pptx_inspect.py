@@ -1,5 +1,14 @@
+import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from zipfile import ZipFile
+
+
+SLIDE_XML_RE = re.compile(r"^ppt/slides/slide\d+\.xml$")
+
+
+def _localname(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
 
 
 def inspect_pptx_editability(pptx_path: Path) -> dict:
@@ -7,17 +16,18 @@ def inspect_pptx_editability(pptx_path: Path) -> dict:
         slide_names = sorted(
             name
             for name in archive.namelist()
-            if name.startswith("ppt/slides/slide") and name.endswith(".xml")
+            if SLIDE_XML_RE.fullmatch(name)
         )
         pages = []
         for slide_name in slide_names:
-            xml = archive.read(slide_name).decode("utf-8", errors="ignore")
+            root = ET.fromstring(archive.read(slide_name))
+            nodes = list(root.iter())
             pages.append(
                 {
                     "slide": slide_name,
-                    "text_runs": xml.count("<a:t>"),
-                    "pictures": xml.count("<p:pic>"),
-                    "shapes": xml.count("<p:sp>"),
+                    "text_runs": sum(1 for node in nodes if _localname(node.tag) == "t"),
+                    "pictures": sum(1 for node in nodes if _localname(node.tag) == "pic"),
+                    "shapes": sum(1 for node in nodes if _localname(node.tag) == "sp"),
                 }
             )
     return {"pages": pages}
