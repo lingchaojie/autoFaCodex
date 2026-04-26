@@ -1,0 +1,127 @@
+{
+  "$defs": {
+    "PageValidation": {
+      "properties": {
+        "page_number": {
+          "minimum": 1,
+          "title": "Page Number",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "repair_needed",
+            "manual_review",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "visual_score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Visual Score",
+          "type": "number"
+        },
+        "editable_score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Editable Score",
+          "type": "number"
+        },
+        "text_coverage_score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Text Coverage Score",
+          "type": "number"
+        },
+        "raster_fallback_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Raster Fallback Ratio",
+          "type": "number"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/ValidatorIssue"
+          },
+          "title": "Issues",
+          "type": "array"
+        }
+      },
+      "required": [
+        "page_number",
+        "status",
+        "visual_score",
+        "editable_score",
+        "text_coverage_score",
+        "raster_fallback_ratio"
+      ],
+      "title": "PageValidation",
+      "type": "object"
+    },
+    "ValidatorIssue": {
+      "properties": {
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "suggested_action": {
+          "title": "Suggested Action",
+          "type": "string"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Region"
+        }
+      },
+      "required": [
+        "type",
+        "message",
+        "suggested_action"
+      ],
+      "title": "ValidatorIssue",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "attempt": {
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "pages": {
+      "items": {
+        "$ref": "#/$defs/PageValidation"
+      },
+      "title": "Pages",
+      "type": "array"
+    }
+  },
+  "required": [
+    "task_id",
+    "attempt",
+    "pages"
+  ],
+  "title": "ValidatorReport",
+  "type": "object"
+}
