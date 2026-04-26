@@ -171,14 +171,17 @@ describe("/api/tasks", () => {
       where: { id: "task_1" },
       data: { inputFilePath: "/shared/tasks/task_1/input.pdf" }
     });
-    expect(enqueueJob).toHaveBeenCalledWith({ taskId: "task_1", workflowType: "pdf_to_ppt" });
     expect(updateTask).toHaveBeenNthCalledWith(2, {
       where: { id: "task_1" },
       data: { status: "queued" }
     });
+    expect(enqueueJob).toHaveBeenCalledWith({ taskId: "task_1", workflowType: "pdf_to_ppt" });
+    expect(updateTask.mock.invocationCallOrder[1]).toBeLessThan(
+      enqueueJob.mock.invocationCallOrder[0]
+    );
   });
 
-  test("POST marks the task failed and returns 500 when enqueue fails", async () => {
+  test("POST marks the task failed and returns 500 when enqueue fails after queued status update", async () => {
     sessionUserId.mockResolvedValueOnce("user_1");
     createTask.mockResolvedValueOnce({
       id: "task_1",
@@ -207,11 +210,14 @@ describe("/api/tasks", () => {
     });
     expect(updateTask).toHaveBeenNthCalledWith(2, {
       where: { id: "task_1" },
-      data: { status: "failed" }
-    });
-    expect(updateTask).not.toHaveBeenCalledWith({
-      where: { id: "task_1" },
       data: { status: "queued" }
+    });
+    expect(updateTask.mock.invocationCallOrder[1]).toBeLessThan(
+      enqueueJob.mock.invocationCallOrder[0]
+    );
+    expect(updateTask).toHaveBeenNthCalledWith(3, {
+      where: { id: "task_1" },
+      data: { status: "failed" }
     });
   });
 });

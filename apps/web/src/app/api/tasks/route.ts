@@ -64,11 +64,11 @@ export async function POST(request: Request) {
       where: { id: task.id },
       data: { inputFilePath }
     });
-    await enqueueWorkflowJob({ taskId: task.id, workflowType: pdfToPptWorkflowType });
     await prisma.workflowTask.update({
       where: { id: task.id },
       data: { status: queuedTaskStatus }
     });
+    await enqueueWorkflowJob({ taskId: task.id, workflowType: pdfToPptWorkflowType });
   } catch {
     try {
       await prisma.workflowTask.update({

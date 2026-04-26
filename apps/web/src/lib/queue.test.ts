@@ -62,4 +62,14 @@ describe("enqueueWorkflowJob", () => {
     ).rejects.toBe(error);
     expect(redisMock.quit).toHaveBeenCalledTimes(1);
   });
+
+  it("does not mask the original xadd error when closing the Redis connection also fails", async () => {
+    const error = new Error("redis unavailable");
+    redisMock.xadd.mockRejectedValueOnce(error);
+    redisMock.quit.mockRejectedValueOnce(new Error("quit failed"));
+
+    await expect(
+      enqueueWorkflowJob({ taskId: "task_1", workflowType: "pdf_to_ppt" })
+    ).rejects.toBe(error);
+  });
 });
