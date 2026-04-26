@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { parseJsonBody } from "@/lib/http";
 import { initialTaskStatus, pdfToPptWorkflowType } from "@/lib/tasks";
 
 const bodySchema = z.object({
@@ -24,7 +25,10 @@ export async function POST(request: Request) {
   const userId = await getSessionUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = bodySchema.parse(await request.json());
+  const parsed = await parseJsonBody(request, bodySchema);
+  if (!parsed.ok) return parsed.response;
+
+  const body = parsed.data;
   const task = await prisma.workflowTask.create({
     data: {
       userId,

@@ -27,7 +27,13 @@ export async function createSession(userId: string) {
     .setExpirationTime("7d")
     .sign(secretKey());
   const jar = await cookies();
-  jar.set(cookieName, token, { httpOnly: true, sameSite: "lax", path: "/" });
+  jar.set(cookieName, token, {
+    httpOnly: true,
+    maxAge: 60 * 60 * 24 * 7,
+    path: "/",
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production"
+  });
 }
 
 export async function getSessionUserId() {
