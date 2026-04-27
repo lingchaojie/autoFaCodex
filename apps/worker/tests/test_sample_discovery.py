@@ -5,6 +5,28 @@ import pytest
 import autofacodex.evaluation.run_samples as samples
 
 
+def _write_validator_report(task_dir: Path) -> None:
+    reports = task_dir / "reports"
+    reports.mkdir(parents=True)
+    (reports / "validator.v1.json").write_text(
+        f"""{{
+          "task_id": "{task_dir.name}",
+          "attempt": 1,
+          "aggregate_status": "pass",
+          "pages": [{{
+            "page_number": 1,
+            "status": "pass",
+            "visual_score": 1.0,
+            "editable_score": 1.0,
+            "text_coverage_score": 1.0,
+            "raster_fallback_ratio": 0.0,
+            "issues": []
+          }}]
+        }}""",
+        encoding="utf-8",
+    )
+
+
 def test_discover_pdfs_returns_sorted_pdfs_ignoring_office_temp_files(
     tmp_path: Path,
 ):
@@ -31,6 +53,7 @@ def test_run_samples_copies_inputs_to_task_dirs_and_runs_conversion(
 
     def fake_run_pdf_to_ppt(task_dir: Path) -> None:
         calls.append(task_dir)
+        _write_validator_report(task_dir)
 
     monkeypatch.setattr(samples, "run_pdf_to_ppt", fake_run_pdf_to_ppt)
 
@@ -44,6 +67,45 @@ def test_run_samples_copies_inputs_to_task_dirs_and_runs_conversion(
     assert calls == expected_task_dirs
     assert (output_root / "sample-001-a" / "input.pdf").read_bytes() == b"pdf a"
     assert (output_root / "sample-002-b" / "input.pdf").read_bytes() == b"pdf b"
+
+
+def test_run_samples_writes_aggregate_report(tmp_path: Path, monkeypatch):
+    samples_dir = tmp_path / "samples"
+    output_root = tmp_path / "evaluation"
+    samples_dir.mkdir()
+    (samples_dir / "a.pdf").write_bytes(b"pdf a")
+
+    def fake_run_pdf_to_ppt(task_dir: Path) -> None:
+        reports = task_dir / "reports"
+        reports.mkdir(parents=True)
+        (reports / "validator.v1.json").write_text(
+            """{
+              "task_id": "sample-001-a",
+              "attempt": 1,
+              "aggregate_status": "repair_needed",
+              "pages": [{
+                "page_number": 1,
+                "status": "repair_needed",
+                "visual_score": 0.75,
+                "editable_score": 1.0,
+                "text_coverage_score": 1.0,
+                "raster_fallback_ratio": 0.0,
+                "issues": [{"type": "visual_fidelity", "message": "low score", "suggested_action": "adjust layout"}]
+              }]
+            }""",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(samples, "run_pdf_to_ppt", fake_run_pdf_to_ppt)
+
+    samples.run_samples(samples_dir, output_root)
+
+    summary = output_root / "evaluation-summary.json"
+    assert summary.is_file()
+    text = summary.read_text(encoding="utf-8")
+    assert '"sample_count": 1' in text
+    assert '"average_visual_score": 0.75' in text
+    assert '"visual_fidelity": 1' in text
 
 
 def test_run_samples_clears_stale_task_dir_and_wraps_conversion_failure(
