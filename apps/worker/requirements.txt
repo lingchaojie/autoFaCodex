@@ -1,0 +1,8 @@
+pydantic==2.11.3
+redis==5.2.1
+PyMuPDF==1.25.5
+python-pptx==1.0.2
+Pillow==11.2.1
+scikit-image==0.25.2
+numpy==2.2.5
+lxml==5.3.2

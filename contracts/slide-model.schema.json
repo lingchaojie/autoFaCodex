@@ -1,0 +1,186 @@
+{
+  "$defs": {
+    "RasterFallbackRegion": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "w": {
+          "exclusiveMinimum": 0,
+          "title": "W",
+          "type": "number"
+        },
+        "h": {
+          "exclusiveMinimum": 0,
+          "title": "H",
+          "type": "number"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h",
+        "reason"
+      ],
+      "title": "RasterFallbackRegion",
+      "type": "object"
+    },
+    "SlideElement": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "text",
+            "image",
+            "shape",
+            "table",
+            "path"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "w": {
+          "minimum": 0,
+          "title": "W",
+          "type": "number"
+        },
+        "h": {
+          "minimum": 0,
+          "title": "H",
+          "type": "number"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "style": {
+          "additionalProperties": true,
+          "title": "Style",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "title": "SlideElement",
+      "type": "object"
+    },
+    "SlideSize": {
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "number"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "number"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "title": "SlideSize",
+      "type": "object"
+    },
+    "SlideSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "page_number": {
+          "minimum": 1,
+          "title": "Page Number",
+          "type": "integer"
+        },
+        "size": {
+          "$ref": "#/$defs/SlideSize"
+        },
+        "elements": {
+          "items": {
+            "$ref": "#/$defs/SlideElement"
+          },
+          "title": "Elements",
+          "type": "array"
+        },
+        "raster_fallback_regions": {
+          "items": {
+            "$ref": "#/$defs/RasterFallbackRegion"
+          },
+          "title": "Raster Fallback Regions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "page_number",
+        "size"
+      ],
+      "title": "SlideSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "slides": {
+      "items": {
+        "$ref": "#/$defs/SlideSpec"
+      },
+      "title": "Slides",
+      "type": "array"
+    }
+  },
+  "required": [
+    "slides"
+  ],
+  "title": "SlideModel",
+  "type": "object"
+}

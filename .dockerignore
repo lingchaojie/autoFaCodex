@@ -1,0 +1,9 @@
+.git
+.superpowers
+node_modules
+apps/web/.next
+apps/worker/.pytest_cache
+apps/worker/.venv
+__pycache__
+*.pyc
+pdf-to-ppt-test-samples/~$*

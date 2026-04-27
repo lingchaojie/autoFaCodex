@@ -1,0 +1,37 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "workflow_type": {
+      "const": "pdf_to_ppt",
+      "title": "Workflow Type",
+      "type": "string"
+    },
+    "input_pdf": {
+      "title": "Input Pdf",
+      "type": "string"
+    },
+    "attempt": {
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "max_attempts": {
+      "minimum": 1,
+      "title": "Max Attempts",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "task_id",
+    "workflow_type",
+    "input_pdf",
+    "attempt",
+    "max_attempts"
+  ],
+  "title": "TaskManifest",
+  "type": "object"
+}
