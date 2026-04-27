@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -106,6 +107,47 @@ def test_run_samples_writes_aggregate_report(tmp_path: Path, monkeypatch):
     assert '"sample_count": 1' in text
     assert '"average_visual_score": 0.75' in text
     assert '"visual_fidelity": 1' in text
+
+
+def test_write_evaluation_summary_uses_latest_numeric_validator_report(
+    tmp_path: Path,
+):
+    output_root = tmp_path / "evaluation"
+    task_dir = output_root / "sample-001-a"
+    reports = task_dir / "reports"
+    reports.mkdir(parents=True)
+
+    def write_report(version: int, visual_score: float) -> None:
+        (reports / f"validator.v{version}.json").write_text(
+            json.dumps(
+                {
+                    "task_id": f"sample-001-a-v{version}",
+                    "attempt": version,
+                    "aggregate_status": "pass",
+                    "pages": [
+                        {
+                            "page_number": 1,
+                            "status": "pass",
+                            "visual_score": visual_score,
+                            "editable_score": 1.0,
+                            "text_coverage_score": 1.0,
+                            "raster_fallback_ratio": 0.0,
+                            "issues": [],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    write_report(2, 0.2)
+    write_report(10, 0.91)
+
+    summary_path = samples.write_evaluation_summary([task_dir], output_root)
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["samples"][0]["task_id"] == "sample-001-a-v10"
+    assert summary["average_visual_score"] == 0.91
 
 
 def test_run_samples_clears_stale_task_dir_and_wraps_conversion_failure(

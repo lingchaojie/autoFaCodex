@@ -1,9 +1,13 @@
 import json
 from pathlib import Path
+import re
 import shutil
 
 from autofacodex.contracts import ValidatorReport
 from autofacodex.workflows.pdf_to_ppt import run_pdf_to_ppt
+
+
+_VALIDATOR_REPORT_PATTERN = re.compile(r"^validator\.v(\d+)\.json$")
 
 
 def discover_pdfs(samples_dir: Path) -> list[Path]:
@@ -13,12 +17,20 @@ def discover_pdfs(samples_dir: Path) -> list[Path]:
 
 
 def _latest_validator_report(task_dir: Path) -> ValidatorReport:
-    reports = sorted((task_dir / "reports").glob("validator.v*.json"))
-    if not reports:
+    versioned_reports: list[tuple[int, Path]] = []
+    for path in (task_dir / "reports").glob("validator.v*.json"):
+        match = _VALIDATOR_REPORT_PATTERN.match(path.name)
+        if match:
+            versioned_reports.append((int(match.group(1)), path))
+
+    if not versioned_reports:
         raise FileNotFoundError(
             f"No validator reports found in {task_dir / 'reports'} for task {task_dir}"
         )
-    return ValidatorReport.model_validate_json(reports[-1].read_text(encoding="utf-8"))
+    latest_report = max(versioned_reports, key=lambda report: report[0])[1]
+    return ValidatorReport.model_validate_json(
+        latest_report.read_text(encoding="utf-8")
+    )
 
 
 def _issue_counts(reports: list[ValidatorReport]) -> dict[str, int]:
