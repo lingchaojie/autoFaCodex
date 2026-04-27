@@ -230,8 +230,15 @@ def test_run_pdf_to_ppt_repair_invokes_runner_then_validator_and_logs_results(
     assert "latest reports/validator.v*.json" in calls[0][1]
     assert "latest slides/slide-model.v*.json" in calls[0][1]
     assert "conversation/messages.jsonl" in calls[0][1]
+    assert "initial PDF extraction or generation" not in calls[0][1]
     assert "produce a revised slide model" in calls[0][1]
+    assert "single bounded repair pass" in calls[0][1]
+    assert "Do not render, diff, or visually validate" in calls[0][1]
+    assert "PYTHONPATH" in calls[0][1]
+    assert "autofacodex.tools.generate_pptx_from_model" in calls[0][1]
     assert "validate every page after repair" in calls[1][1]
+    assert "autofacodex.tools.pptx_inspect" in calls[1][1]
+    assert "autofacodex.tools.visual_diff" in calls[1][1]
     assert "reports/validator.vN.json" in calls[1][1]
     assert (task_dir / "logs" / "runner-repair.log").read_text(encoding="utf-8") == (
         "returncode: 0\nstdout:\nrunner stdout\nstderr:\nrunner stderr\n"

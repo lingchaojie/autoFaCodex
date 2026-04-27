@@ -49,7 +49,62 @@ def _area_ratio(geometry: dict[str, float], slide_width: float, slide_height: fl
     slide_area = slide_width * slide_height
     if slide_area <= 0:
         return 0.0
-    return max(0.0, geometry["w"] * geometry["h"] / slide_area)
+    return max(0.0, min(1.0, geometry["w"] * geometry["h"] / slide_area))
+
+
+def _clipped_rect(
+    geometry: dict[str, float], slide_width: float, slide_height: float
+) -> tuple[float, float, float, float] | None:
+    x1 = max(0.0, geometry["x"])
+    y1 = max(0.0, geometry["y"])
+    x2 = min(slide_width, geometry["x"] + geometry["w"])
+    y2 = min(slide_height, geometry["y"] + geometry["h"])
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return (x1, y1, x2, y2)
+
+
+def _union_area(rects: list[tuple[float, float, float, float]]) -> float:
+    if not rects:
+        return 0.0
+    x_points = sorted({point for rect in rects for point in (rect[0], rect[2])})
+    area = 0.0
+    for left, right in zip(x_points, x_points[1:], strict=False):
+        if right <= left:
+            continue
+        y_intervals = [
+            (top, bottom)
+            for x1, top, x2, bottom in rects
+            if x1 < right and x2 > left
+        ]
+        if not y_intervals:
+            continue
+        y_intervals.sort()
+        covered_y = 0.0
+        current_top, current_bottom = y_intervals[0]
+        for top, bottom in y_intervals[1:]:
+            if top <= current_bottom:
+                current_bottom = max(current_bottom, bottom)
+            else:
+                covered_y += current_bottom - current_top
+                current_top, current_bottom = top, bottom
+        covered_y += current_bottom - current_top
+        area += (right - left) * covered_y
+    return area
+
+
+def _coverage_ratio(
+    geometries: list[dict[str, float]], slide_width: float, slide_height: float
+) -> float:
+    slide_area = slide_width * slide_height
+    if slide_area <= 0:
+        return 0.0
+    rects = [
+        rect
+        for geometry in geometries
+        if (rect := _clipped_rect(geometry, slide_width, slide_height)) is not None
+    ]
+    return max(0.0, min(1.0, _union_area(rects) / slide_area))
 
 
 def inspect_pptx_editability(pptx_path: Path) -> dict:
@@ -70,6 +125,8 @@ def inspect_pptx_editability(pptx_path: Path) -> dict:
                 _area_ratio(geometry, slide_width, slide_height) for geometry in pictures
             ]
             largest_picture_area_ratio = max(picture_area_ratios, default=0.0)
+            total_picture_area_ratio = min(1.0, sum(picture_area_ratios))
+            picture_coverage_ratio = _coverage_ratio(pictures, slide_width, slide_height)
             pages.append(
                 {
                     "slide": slide_name,
@@ -82,7 +139,12 @@ def inspect_pptx_editability(pptx_path: Path) -> dict:
                     "picture_geometries": pictures,
                     "shape_geometries": shapes,
                     "largest_picture_area_ratio": largest_picture_area_ratio,
-                    "has_full_page_picture": largest_picture_area_ratio >= 0.92,
+                    "total_picture_area_ratio": total_picture_area_ratio,
+                    "picture_coverage_ratio": picture_coverage_ratio,
+                    "has_full_page_picture": (
+                        largest_picture_area_ratio >= 0.92
+                        or picture_coverage_ratio >= 0.92
+                    ),
                 }
             )
     return {"pages": pages}

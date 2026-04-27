@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from autofacodex.contracts import SlideModel
@@ -73,4 +74,42 @@ def test_inspect_pptx_detects_full_page_picture(tmp_path: Path):
     page = inspection["pages"][0]
     assert page["pictures"] == 1
     assert page["largest_picture_area_ratio"] > 0.98
+    assert page["has_full_page_picture"] is True
+
+
+def test_inspect_pptx_detects_tiled_full_page_pictures(tmp_path: Path):
+    image_path = tmp_path / "tile.png"
+    Image.new("RGB", (600, 400), color=(240, 240, 240)).save(image_path)
+    elements = []
+    for index, (x, y) in enumerate(
+        [(0, 0), (5, 0), (0, 3.75), (5, 3.75)], start=1
+    ):
+        elements.append(
+            {
+                "id": f"tile-{index}",
+                "type": "image",
+                "source": str(image_path),
+                "x": x,
+                "y": y,
+                "w": 5,
+                "h": 3.75,
+            }
+        )
+    model = _model(
+        {
+            "page_number": 1,
+            "size": {"width": 10, "height": 7.5},
+            "elements": elements,
+            "raster_fallback_regions": [],
+        }
+    )
+    output = tmp_path / "candidate.pptx"
+    generate_pptx(model, output)
+
+    inspection = inspect_pptx_editability(output)
+
+    page = inspection["pages"][0]
+    assert page["pictures"] == 4
+    assert page["largest_picture_area_ratio"] == pytest.approx(0.25, abs=0.01)
+    assert page["picture_coverage_ratio"] > 0.98
     assert page["has_full_page_picture"] is True

@@ -144,6 +144,42 @@ def test_validate_candidate_rejects_full_page_picture(tmp_path: Path, monkeypatc
     assert any(issue.type == "editability" for issue in report.pages[0].issues)
 
 
+def test_validate_candidate_rejects_tiled_full_page_picture_coverage(
+    tmp_path: Path, monkeypatch
+):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    _write_task(task_dir, ppt_text="Editable Title")
+    (task_dir / "reports" / "inspection.v1.json").write_text(
+        json.dumps(
+            {
+                "pages": [
+                    {
+                        "slide": "ppt/slides/slide1.xml",
+                        "text_runs": 1,
+                        "pictures": 4,
+                        "shapes": 1,
+                        "tables": 0,
+                        "text": "Editable Title",
+                        "largest_picture_area_ratio": 0.25,
+                        "picture_coverage_ratio": 0.99,
+                        "has_full_page_picture": False,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    _stub_validation_tools(task_dir, monkeypatch)
+
+    report = validate_candidate(task_dir, attempt=1)
+
+    assert report.aggregate_status == "repair_needed"
+    assert report.pages[0].status == "repair_needed"
+    assert report.pages[0].raster_fallback_ratio == pytest.approx(0.99)
+    assert any(issue.type == "editability" for issue in report.pages[0].issues)
+
+
 def test_validate_candidate_rejects_inspection_page_count_mismatch(
     tmp_path: Path, monkeypatch
 ):

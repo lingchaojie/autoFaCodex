@@ -26,6 +26,31 @@ WORKER_ROOT = Path(__file__).resolve().parents[3]
 AGENT_ASSETS_DIR = WORKER_ROOT / "agent_assets"
 
 
+def _python_executable() -> str:
+    venv_python = WORKER_ROOT / ".venv" / "bin" / "python"
+    if venv_python.exists():
+        return str(venv_python)
+    return "python"
+
+
+def _agent_tool_context() -> str:
+    python = _python_executable()
+    source_dir = WORKER_ROOT / "src"
+    return (
+        "Deterministic tool context:\n"
+        f"- Worker source directory: {source_dir}\n"
+        f"- Python executable: {python}\n"
+        "- Run commands from the task directory and write outputs only inside that task directory.\n"
+        "- Regenerate a PPTX from a revised slide model with:\n"
+        f"  PYTHONPATH={source_dir} {python} -m autofacodex.tools.generate_pptx_from_model "
+        "slides/slide-model.vN.json output/candidate.vN.pptx --asset-root .\n"
+        "- Inspect PPTX editability from Python with "
+        "`from autofacodex.tools.pptx_inspect import inspect_pptx_editability`.\n"
+        "- Compare rendered images from Python with "
+        "`from autofacodex.tools.visual_diff import compare_images`.\n"
+    )
+
+
 def _validate_pdf_renders(render_paths: list[Path], expected_count: int) -> None:
     if len(render_paths) != expected_count:
         raise RuntimeError(f"Expected {expected_count} PDF renders, got {len(render_paths)}")
@@ -66,8 +91,16 @@ def _run_repair(task_dir: Path) -> None:
         "Repair this existing pdf_to_ppt task. Read task-manifest.json, "
         "latest reports/validator.v*.json, latest slides/slide-model.v*.json, "
         "and conversation/messages.jsonl if present. Do not rerun deterministic "
-        "initial PDF extraction or generation. Then produce a revised slide model, "
-        "PPTX candidate, and repair report/event in the task directory."
+        "initial PDF extraction. Do exactly one single bounded repair pass: focus "
+        "on the first one or two failed pages unless the user named specific pages, "
+        "avoid full-deck visual exploration, and exit after writing artifacts. Do "
+        "not render, diff, or visually validate the PPTX; that is the Validator's "
+        "responsibility. Then "
+        "produce a revised slide model, PPTX candidate, and repair report/event in "
+        "the task directory. If no confident repair is possible in this bounded "
+        "pass, write the repair report/event with the reason and exit without "
+        "looping.\n\n"
+        f"{_agent_tool_context()}"
     )
     runner_result = run_codex_agent(_codex_invocation("runner", task_dir), runner_message)
     _write_agent_log(logs_dir / "runner-repair.log", runner_result)
@@ -80,7 +113,8 @@ def _run_repair(task_dir: Path) -> None:
         "Please validate every page after repair. Read task-manifest.json, the "
         "latest slides/slide-model.v*.json, the latest PPTX candidate, renders, "
         "and repair evidence, then write reports/validator.vN.json as strict "
-        "valid JSON."
+        "valid JSON.\n\n"
+        f"{_agent_tool_context()}"
     )
     validator_result = run_codex_agent(
         _codex_invocation("validator", task_dir), validator_message

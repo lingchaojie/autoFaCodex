@@ -42,15 +42,19 @@ def _raster_ratio(model: SlideModel, page_index: int) -> float:
     return _clamp_ratio(raster_area / slide_area)
 
 
-def _inspection_picture_ratio(inspection_page: dict) -> float:
-    value = inspection_page.get("largest_picture_area_ratio")
+def _ratio_value(value: object) -> float:
     try:
-        ratio = float(value)
+        return _clamp_ratio(float(value))
     except (TypeError, ValueError):
         return 0.0
-    if bool(inspection_page.get("has_full_page_picture", False)) or ratio > 0:
-        return _clamp_ratio(ratio)
-    return 0.0
+
+
+def _inspection_picture_ratio(inspection_page: dict) -> float:
+    return max(
+        _ratio_value(inspection_page.get("largest_picture_area_ratio")),
+        _ratio_value(inspection_page.get("total_picture_area_ratio")),
+        _ratio_value(inspection_page.get("picture_coverage_ratio")),
+    )
 
 
 def _editable_score(inspection_page: dict) -> float:
