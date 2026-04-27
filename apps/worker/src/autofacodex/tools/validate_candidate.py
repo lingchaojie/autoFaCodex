@@ -27,6 +27,10 @@ def _relative_path(path: Path, root: Path) -> str:
         return path.as_posix()
 
 
+def _clamp_ratio(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
 def _raster_ratio(model: SlideModel, page_index: int) -> float:
     if page_index < 0 or page_index >= len(model.slides):
         return 1.0
@@ -35,7 +39,18 @@ def _raster_ratio(model: SlideModel, page_index: int) -> float:
     if slide_area <= 0:
         return 1.0
     raster_area = sum(region.w * region.h for region in slide.raster_fallback_regions)
-    return max(0.0, min(1.0, raster_area / slide_area))
+    return _clamp_ratio(raster_area / slide_area)
+
+
+def _inspection_picture_ratio(inspection_page: dict) -> float:
+    value = inspection_page.get("largest_picture_area_ratio")
+    try:
+        ratio = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if bool(inspection_page.get("has_full_page_picture", False)) or ratio > 0:
+        return _clamp_ratio(ratio)
+    return 0.0
 
 
 def _editable_score(inspection_page: dict) -> float:
@@ -125,6 +140,22 @@ def _pdf_render_paths(task_dir: Path) -> list[Path]:
     return sorted((task_dir / "renders" / "pdf").glob("page-*.png"))
 
 
+def _validate_slide_model_alignment(slide_model: SlideModel, extracted_pages: list[dict]) -> None:
+    if len(slide_model.slides) != len(extracted_pages):
+        raise RuntimeError(
+            f"Slide model page count {len(slide_model.slides)} does not match "
+            f"extracted page count {len(extracted_pages)}"
+        )
+    for index, extracted_page in enumerate(extracted_pages):
+        expected_page_number = int(extracted_page.get("page_number", index + 1))
+        model_page_number = slide_model.slides[index].page_number
+        if model_page_number != expected_page_number:
+            raise RuntimeError(
+                f"Slide model page_number {model_page_number} does not match "
+                f"extracted page_number {expected_page_number} at index {index}"
+            )
+
+
 def validate_candidate(task_dir: Path, attempt: int = 1) -> ValidatorReport:
     candidate = _candidate_path(task_dir, attempt)
     if not candidate.is_file():
@@ -135,6 +166,7 @@ def validate_candidate(task_dir: Path, attempt: int = 1) -> ValidatorReport:
     )
     extracted_pages = _load_pages(task_dir)
     page_count = len(extracted_pages)
+    _validate_slide_model_alignment(slide_model, extracted_pages)
 
     pdf_renders = _pdf_render_paths(task_dir)
     if len(pdf_renders) != page_count:
@@ -158,6 +190,13 @@ def validate_candidate(task_dir: Path, attempt: int = 1) -> ValidatorReport:
     inspection_path = reports_dir / f"inspection.v{attempt}.json"
     inspection_path.write_text(json.dumps(inspection, indent=2), encoding="utf-8")
     inspection_pages = inspection.get("pages", [])
+    if not isinstance(inspection_pages, list):
+        raise RuntimeError("Inspection pages must be a list")
+    if len(inspection_pages) != page_count:
+        raise RuntimeError(
+            f"Inspection page count {len(inspection_pages)} does not match "
+            f"extracted page count {page_count}"
+        )
 
     text_coverage_pages = []
     validations: list[PageValidation] = []
@@ -186,7 +225,10 @@ def validate_candidate(task_dir: Path, attempt: int = 1) -> ValidatorReport:
         text_score = float(text_coverage["score"])
 
         full_page_picture = bool(inspection_page.get("has_full_page_picture", False))
-        raster_ratio = _raster_ratio(slide_model, page_index)
+        raster_ratio = max(
+            _raster_ratio(slide_model, page_index),
+            _inspection_picture_ratio(inspection_page),
+        )
         editable_score = _editable_score(inspection_page)
         evidence_paths = {
             "pdf_render": _relative_path(pdf_render, task_dir),
@@ -224,9 +266,7 @@ def validate_candidate(task_dir: Path, attempt: int = 1) -> ValidatorReport:
             )
         )
 
-    text_coverage_path.write_text(
-        json.dumps({"pages": text_coverage_pages}, indent=2), encoding="utf-8"
-    )
+    text_coverage_path.write_text(json.dumps(text_coverage_pages, indent=2), encoding="utf-8")
 
     report = ValidatorReport(
         task_id=task_dir.name,
