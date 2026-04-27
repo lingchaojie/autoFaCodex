@@ -25,6 +25,8 @@ def _emu(value: str | None) -> float:
 
 
 def _presentation_size(archive: ZipFile) -> tuple[float, float]:
+    if "ppt/presentation.xml" not in archive.namelist():
+        return (10.0, 7.5)
     root = ET.fromstring(archive.read("ppt/presentation.xml"))
     size = root.find(".//p:sldSz", NS)
     if size is None:
