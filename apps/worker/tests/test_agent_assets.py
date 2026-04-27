@@ -32,6 +32,11 @@ def test_runner_prompt_requires_evidence_based_slide_model_repair():
     assert "runner-repair.vN.json" in text
     assert "Do not validate your own output" in text
     assert "bounded raster fallback" in text
+    assert "use deterministic project tools for slide-model repair and PPTX generation" in text
+    assert (
+        "must not run rendering, diffing, scoring, or inspection to make "
+        "pass/fail validation decisions"
+    ) in text
 
 
 def test_validator_prompt_requires_real_evidence_paths():
