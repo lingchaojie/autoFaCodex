@@ -22,10 +22,47 @@ def make_pdf(path: Path) -> None:
     c.save()
 
 
-def test_run_pdf_to_ppt_creates_candidate_report_and_slide_model(tmp_path: Path):
+def _write_validator_report(task_dir: Path, attempt: int, page_count: int) -> ValidatorReport:
+    report = ValidatorReport(
+        task_id=task_dir.name,
+        attempt=attempt,
+        aggregate_status="pass",
+        pages=[
+            {
+                "page_number": page_number,
+                "status": "pass",
+                "visual_score": 1.0,
+                "editable_score": 1.0,
+                "text_coverage_score": 1.0,
+                "raster_fallback_ratio": 0,
+                "issues": [],
+            }
+            for page_number in range(1, page_count + 1)
+        ],
+    )
+    (task_dir / "reports").mkdir(parents=True, exist_ok=True)
+    (task_dir / "reports" / f"validator.v{attempt}.json").write_text(
+        report.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+    return report
+
+
+def test_run_pdf_to_ppt_creates_candidate_report_and_slide_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     task_dir = tmp_path / "task_1"
     task_dir.mkdir()
     make_pdf(task_dir / "input.pdf")
+
+    def fake_validate_candidate(received_task_dir: Path, attempt: int):
+        assert received_task_dir == task_dir
+        assert attempt == 1
+        return _write_validator_report(received_task_dir, attempt, page_count=2)
+
+    monkeypatch.setattr(
+        workflow, "validate_candidate", fake_validate_candidate, raising=False
+    )
 
     run_pdf_to_ppt(task_dir)
 
@@ -44,6 +81,48 @@ def test_run_pdf_to_ppt_creates_candidate_report_and_slide_model(tmp_path: Path)
     assert [slide.page_number for slide in model.slides] == [1, 2]
     assert [page.page_number for page in report.pages] == [1, 2]
     assert len(presentation.slides) == len(model.slides) == len(report.pages)
+
+
+def test_run_pdf_to_ppt_initial_uses_real_candidate_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    task_dir = tmp_path / "task_1"
+    task_dir.mkdir()
+    make_pdf(task_dir / "input.pdf")
+    calls = []
+
+    def fake_validate_candidate(received_task_dir: Path, attempt: int):
+        calls.append((received_task_dir, attempt))
+        report = ValidatorReport(
+            task_id=received_task_dir.name,
+            attempt=attempt,
+            aggregate_status="repair_needed",
+            pages=[
+                {
+                    "page_number": 1,
+                    "status": "repair_needed",
+                    "visual_score": 0.5,
+                    "editable_score": 1.0,
+                    "text_coverage_score": 1.0,
+                    "raster_fallback_ratio": 0,
+                    "issues": [],
+                }
+            ],
+        )
+        (received_task_dir / "reports").mkdir(parents=True, exist_ok=True)
+        (received_task_dir / "reports" / "validator.v1.json").write_text(
+            report.model_dump_json(indent=2),
+            encoding="utf-8",
+        )
+        return report
+
+    monkeypatch.setattr(
+        workflow, "validate_candidate", fake_validate_candidate, raising=False
+    )
+
+    run_pdf_to_ppt(task_dir)
+
+    assert calls == [(task_dir, 1)]
 
 
 def test_run_pdf_to_ppt_rejects_invalid_pdf(tmp_path: Path):

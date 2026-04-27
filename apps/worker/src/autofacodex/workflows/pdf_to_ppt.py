@@ -3,13 +3,12 @@ import subprocess
 from typing import Literal
 
 from autofacodex.agents.codex_runner import CodexInvocation, run_codex_agent
-from autofacodex.agents.validator_runtime import build_validator_report
 from autofacodex.config import load_config
 from autofacodex.tools.pdf_extract import extract_pdf
 from autofacodex.tools.pdf_render import render_pdf_pages
 from autofacodex.tools.pptx_generate import generate_pptx
-from autofacodex.tools.pptx_inspect import inspect_pptx_editability
 from autofacodex.tools.slide_model_builder import build_initial_slide_model
+from autofacodex.tools.validate_candidate import validate_candidate
 
 
 WORKFLOW_DIRS = [
@@ -112,25 +111,8 @@ def _run_initial(task_dir: Path) -> None:
         slide_model.model_dump_json(indent=2), encoding="utf-8"
     )
 
-    candidate = generate_pptx(slide_model, task_dir / "output" / "candidate.v1.pptx")
-    inspection = inspect_pptx_editability(candidate)
-    page_numbers = range(1, page_count + 1)
-    editable_scores = {
-        index: 1.0 if page.get("text_runs", 0) > 0 else 0.0
-        for index, page in enumerate(inspection["pages"], start=1)
-    }
-    report = build_validator_report(
-        task_id=task_dir.name,
-        attempt=1,
-        page_count=page_count,
-        visual_scores={page_number: 0.5 for page_number in page_numbers},
-        editable_scores=editable_scores,
-        text_scores={page_number: 0.8 for page_number in range(1, page_count + 1)},
-        raster_ratios={page_number: 0.0 for page_number in range(1, page_count + 1)},
-    )
-    (task_dir / "reports" / "validator.v1.json").write_text(
-        report.model_dump_json(indent=2), encoding="utf-8"
-    )
+    generate_pptx(slide_model, task_dir / "output" / "candidate.v1.pptx")
+    validate_candidate(task_dir, attempt=1)
 
 
 def run_pdf_to_ppt(
