@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import os
 import subprocess
 from pathlib import Path
+import uuid
 
 from autofacodex.tools.pdf_render import render_pdf_pages
 
@@ -12,13 +13,13 @@ class PptxRenderResult:
     page_images: list[Path]
 
 
-class PptxRenderError(RuntimeError, FileNotFoundError):
+class PptxRenderError(RuntimeError):
     pass
 
 
-def _profile_dir(profile_root: Path | None, pptx_path: Path) -> Path:
-    root = profile_root if profile_root is not None else pptx_path.parent / ".libreoffice"
-    return root / f"profile-{pptx_path.stem}"
+def _profile_dir(profile_root: Path | None, output_dir: Path, pptx_path: Path) -> Path:
+    root = profile_root if profile_root is not None else output_dir / ".libreoffice"
+    return root / f"profile-{pptx_path.stem}-{uuid.uuid4().hex}"
 
 
 def render_pptx_to_pdf(
@@ -28,7 +29,7 @@ def render_pptx_to_pdf(
     libreoffice_bin: str = "libreoffice",
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
-    profile_dir = _profile_dir(profile_root, pptx_path)
+    profile_dir = _profile_dir(profile_root, output_dir, pptx_path)
     profile_dir.mkdir(parents=True, exist_ok=True)
     env = {
         **os.environ,
@@ -56,9 +57,14 @@ def render_pptx_to_pdf(
         env=env,
     )
     output_pdf = output_dir / f"{pptx_path.stem}.pdf"
-    if result.returncode != 0 or not output_pdf.is_file():
+    if result.returncode != 0:
         raise PptxRenderError(
             f"LibreOffice failed to render {pptx_path} to {output_pdf}. "
+            f"returncode={result.returncode} stdout={result.stdout or ''} stderr={result.stderr or ''}"
+        )
+    if not output_pdf.is_file():
+        raise FileNotFoundError(
+            f"LibreOffice did not create expected PDF {output_pdf}. "
             f"returncode={result.returncode} stdout={result.stdout or ''} stderr={result.stderr or ''}"
         )
     return output_pdf
