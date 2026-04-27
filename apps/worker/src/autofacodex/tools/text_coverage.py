@@ -26,8 +26,13 @@ def normalize_text(value: str) -> str:
 ASCII_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
 
 
+def _normalize_for_tokens(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value or "")
+    return normalized.translate(PUNCT_TRANSLATION).lower()
+
+
 def _normalized_ascii_tokens(value: str) -> list[str]:
-    return [normalize_text(token) for token in ASCII_TOKEN_PATTERN.findall(value)]
+    return ASCII_TOKEN_PATTERN.findall(_normalize_for_tokens(value))
 
 
 def _missing_coverage(source_text: str, candidate_text: str) -> tuple[int, str]:
@@ -66,6 +71,14 @@ def compare_text_coverage(source_text: str, candidate_text: str) -> dict:
             "missing_ratio": 0.0,
             "missing_text": "",
             "source_length": 0,
+            "candidate_length": len(candidate),
+        }
+    if source == candidate:
+        return {
+            "score": 1.0,
+            "missing_ratio": 0.0,
+            "missing_text": "",
+            "source_length": len(source),
             "candidate_length": len(candidate),
         }
     missing_count, missing_text = _missing_coverage(source_text, candidate_text)

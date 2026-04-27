@@ -40,11 +40,34 @@ def test_compare_text_coverage_counts_repeated_chinese_text_quantity():
 def test_compare_text_coverage_counts_repeated_english_words_quantity():
     result = compare_text_coverage("Executive Executive Training", "Executive Training")
 
-    assert result["score"] < 1
+    assert result["score"] == pytest.approx(17 / 26)
+    assert result["missing_ratio"] == pytest.approx(9 / 26)
     assert "executive" in result["missing_text"].lower()
 
 
 def test_compare_text_coverage_does_not_cover_numeric_substrings():
     result = compare_text_coverage("CEO Q1", "CEO Q10")
 
-    assert result["score"] < 1
+    assert result["score"] == pytest.approx(3 / 5)
+    assert result["missing_ratio"] == pytest.approx(2 / 5)
+
+
+def test_compare_text_coverage_scores_normalized_identical_short_ascii_as_complete():
+    result = compare_text_coverage("CEO Q1", "CEOQ1")
+
+    assert result["score"] == 1.0
+    assert result["missing_ratio"] == 0.0
+
+
+def test_compare_text_coverage_scores_normalized_identical_words_as_complete():
+    result = compare_text_coverage("Executive Interview", "ExecutiveInterview")
+
+    assert result["score"] == 1.0
+
+
+def test_compare_text_coverage_counts_missing_full_width_ascii_after_normalization():
+    result = compare_text_coverage("ＡＢＣ１２３", "")
+
+    assert result["score"] == 0.0
+    assert result["missing_ratio"] == 1.0
+    assert result["missing_text"]
