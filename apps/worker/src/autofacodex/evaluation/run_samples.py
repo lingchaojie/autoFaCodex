@@ -8,6 +8,7 @@ from autofacodex.workflows.pdf_to_ppt import run_pdf_to_ppt
 
 
 _VALIDATOR_REPORT_PATTERN = re.compile(r"^validator\.v(\d+)\.json$")
+_STATUS_PRIORITY = ("failed", "repair_needed", "manual_review", "pass")
 
 
 def discover_pdfs(samples_dir: Path) -> list[Path]:
@@ -42,8 +43,22 @@ def _issue_counts(reports: list[ValidatorReport]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def _resolved_aggregate_status(report: ValidatorReport) -> str:
+    if report.aggregate_status is not None:
+        return report.aggregate_status
+    if not report.pages:
+        return "failed"
+
+    page_statuses = {page.status for page in report.pages}
+    for status in _STATUS_PRIORITY:
+        if status in page_statuses:
+            return status
+    return "failed"
+
+
 def write_evaluation_summary(task_dirs: list[Path], output_root: Path) -> Path:
     reports = [_latest_validator_report(task_dir) for task_dir in task_dirs]
+    resolved_statuses = [_resolved_aggregate_status(report) for report in reports]
     pages = [page for report in reports for page in report.pages]
     status_counts = {
         "pass": 0,
@@ -51,9 +66,8 @@ def write_evaluation_summary(task_dirs: list[Path], output_root: Path) -> Path:
         "manual_review": 0,
         "failed": 0,
     }
-    for report in reports:
-        if report.aggregate_status is not None:
-            status_counts[report.aggregate_status] += 1
+    for status in resolved_statuses:
+        status_counts[status] += 1
 
     summary = {
         "sample_count": len(reports),
@@ -72,7 +86,7 @@ def write_evaluation_summary(task_dirs: list[Path], output_root: Path) -> Path:
             {
                 "task_dir": str(task_dir),
                 "task_id": report.task_id,
-                "aggregate_status": report.aggregate_status,
+                "aggregate_status": status,
                 "page_count": len(report.pages),
                 "average_visual_score": round(
                     sum(page.visual_score for page in report.pages) / len(report.pages),
@@ -86,7 +100,7 @@ def write_evaluation_summary(task_dirs: list[Path], output_root: Path) -> Path:
                 if report.pages
                 else 0.0,
             }
-            for task_dir, report in zip(task_dirs, reports)
+            for task_dir, report, status in zip(task_dirs, reports, resolved_statuses)
         ],
     }
     summary_path = output_root / "evaluation-summary.json"

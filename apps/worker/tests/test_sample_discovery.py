@@ -103,10 +103,68 @@ def test_run_samples_writes_aggregate_report(tmp_path: Path, monkeypatch):
 
     summary = output_root / "evaluation-summary.json"
     assert summary.is_file()
-    text = summary.read_text(encoding="utf-8")
-    assert '"sample_count": 1' in text
-    assert '"average_visual_score": 0.75' in text
-    assert '"visual_fidelity": 1' in text
+    report = json.loads(summary.read_text(encoding="utf-8"))
+    assert report["sample_count"] == 1
+    assert report["page_count"] == 1
+    assert report["average_visual_score"] == 0.75
+    assert report["min_visual_score"] == 0.75
+    assert report["aggregate_status_counts"] == {
+        "failed": 0,
+        "manual_review": 0,
+        "pass": 0,
+        "repair_needed": 1,
+    }
+    assert report["issue_counts"] == {"visual_fidelity": 1}
+    assert report["samples"] == [
+        {
+            "task_dir": str(output_root / "sample-001-a"),
+            "task_id": "sample-001-a",
+            "aggregate_status": "repair_needed",
+            "page_count": 1,
+            "average_visual_score": 0.75,
+            "min_visual_score": 0.75,
+        }
+    ]
+
+
+def test_write_evaluation_summary_derives_missing_aggregate_status(
+    tmp_path: Path,
+):
+    output_root = tmp_path / "evaluation"
+    task_dir = output_root / "sample-001-a"
+    reports = task_dir / "reports"
+    reports.mkdir(parents=True)
+    (reports / "validator.v1.json").write_text(
+        json.dumps(
+            {
+                "task_id": "sample-001-a",
+                "attempt": 1,
+                "pages": [
+                    {
+                        "page_number": 1,
+                        "status": "repair_needed",
+                        "visual_score": 0.82,
+                        "editable_score": 1.0,
+                        "text_coverage_score": 1.0,
+                        "raster_fallback_ratio": 0.0,
+                        "issues": [],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary_path = samples.write_evaluation_summary([task_dir], output_root)
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["aggregate_status_counts"] == {
+        "failed": 0,
+        "manual_review": 0,
+        "pass": 0,
+        "repair_needed": 1,
+    }
+    assert summary["samples"][0]["aggregate_status"] == "repair_needed"
 
 
 def test_write_evaluation_summary_uses_latest_numeric_validator_report(
