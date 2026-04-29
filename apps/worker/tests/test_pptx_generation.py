@@ -1324,6 +1324,30 @@ def test_build_initial_slide_model_suppresses_line_fragments_inside_dominant_bac
                             "stroke": "#DDDDDD",
                             "seqno": 6,
                         },
+                        {
+                            "shape": "line",
+                            "p1": [600, 180],
+                            "p2": [780, 360],
+                            "bbox": [600, 180, 780, 360],
+                            "stroke": "#DDDDDD",
+                            "seqno": 7,
+                        },
+                        {
+                            "shape": "line",
+                            "p1": [600, 360],
+                            "p2": [780, 180],
+                            "bbox": [600, 180, 780, 360],
+                            "stroke": "#DDDDDD",
+                            "seqno": 8,
+                        },
+                        {
+                            "shape": "line",
+                            "p1": [600, 180],
+                            "p2": [780, 360],
+                            "bbox": [600, 180, 780, 360],
+                            "stroke": "#DDDDDD",
+                            "seqno": 9,
+                        },
                     ],
                 }
             ]
@@ -1335,6 +1359,8 @@ def test_build_initial_slide_model_suppresses_line_fragments_inside_dominant_bac
         "p1-shape-1",
         "p1-shape-3",
         "p1-shape-5",
+        "p1-shape-6",
+        "p1-shape-7",
     ]
     assert model.slides[0].elements[0].style["role"] == "background"
 

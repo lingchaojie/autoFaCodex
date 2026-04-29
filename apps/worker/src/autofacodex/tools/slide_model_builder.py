@@ -422,6 +422,21 @@ def _background_fragment_key(
     shape_type = None
     if element.type == "shape":
         shape_type = str(element.style.get("shape", ""))
+        if shape_type == "line":
+            endpoints = sorted(
+                (
+                    (
+                        float(element.style.get("x1", element.x)),
+                        float(element.style.get("y1", element.y)),
+                    ),
+                    (
+                        float(element.style.get("x2", element.x + element.w)),
+                        float(element.style.get("y2", element.y + element.h)),
+                    ),
+                )
+            )
+            geometry = tuple(round(value, 4) for point in endpoints for value in point)
+            return (element.type, shape_type, geometry)
     return (
         element.type,
         shape_type,
