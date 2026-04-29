@@ -4,7 +4,7 @@ Date: 2026-04-29
 
 ## Task Directory
 
-`/home/alvin/AutoFaCodex/.worktrees/pdf-to-ppt-mvp/shared-tasks/next-phase-maple-20260429-031808`
+`/home/alvin/AutoFaCodex/shared-tasks/next-phase-maple-20260429-031808`
 
 The first Maple run exposed that `extract_diff_regions` was too conservative for real page diffs. It found no regions at `threshold=0.1, min_area_ratio=0.01`, even though lower thresholds found localized evidence. The Validator call was adjusted to use `threshold=0.05, min_area_ratio=0.001`, then the Maple workflow was rerun from a fresh task directory listed above.
 
