@@ -73,7 +73,14 @@ def _ideal_comparison(task_dir: Path) -> dict | None:
     ideal_pptx = _ideal_pptx_path(task_dir)
     if not final_pptx.is_file() or not ideal_pptx.is_file():
         return None
-    return compare_pptx_structure(final_pptx, ideal_pptx)
+    comparison = compare_pptx_structure(final_pptx, ideal_pptx)
+    reports_dir = task_dir / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    (reports_dir / "ideal-comparison.json").write_text(
+        json.dumps(comparison, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return comparison
 
 
 def write_evaluation_summary(task_dirs: list[Path], output_root: Path) -> Path:

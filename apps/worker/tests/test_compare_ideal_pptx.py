@@ -28,3 +28,55 @@ def test_compare_pptx_structure_reports_page_count_and_text_delta(tmp_path: Path
     assert result["slide_count_delta"] == -1
     assert result["pages"][0]["generated_text_runs"] == 1
     assert result["pages"][0]["ideal_text_runs"] == 1
+
+
+def test_compare_pptx_structure_includes_strategy_deltas(tmp_path: Path, monkeypatch):
+    generated = tmp_path / "generated.pptx"
+    ideal = tmp_path / "ideal.pptx"
+    _pptx(generated, ["Generated"])
+    _pptx(ideal, ["Ideal"])
+
+    profiles = {
+        generated: {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "strategy": "fragmented_objects",
+                    "text_box_count": 8,
+                    "pictures": 12,
+                    "shapes": 36,
+                    "largest_picture_area_ratio": 0.72,
+                    "picture_coverage_ratio": 0.89,
+                }
+            ]
+        },
+        ideal: {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "strategy": "background_plus_foreground_text",
+                    "text_box_count": 3,
+                    "pictures": 3,
+                    "shapes": 8,
+                    "largest_picture_area_ratio": 0.94,
+                    "picture_coverage_ratio": 0.95,
+                }
+            ]
+        },
+    }
+    monkeypatch.setattr(
+        "autofacodex.evaluation.compare_ideal_pptx.profile_pptx_strategy",
+        lambda path: profiles[path],
+    )
+
+    result = compare_pptx_structure(generated, ideal)
+
+    page = result["pages"][0]
+    assert page["generated_strategy"] == "fragmented_objects"
+    assert page["ideal_strategy"] == "background_plus_foreground_text"
+    assert page["strategy_matches"] is False
+    assert page["picture_count_delta"] == 9
+    assert page["shape_count_delta"] == 28
+    assert page["text_box_count_delta"] == 5
+    assert page["largest_picture_area_ratio_delta"] == -0.22
+    assert page["picture_coverage_ratio_delta"] == -0.06
