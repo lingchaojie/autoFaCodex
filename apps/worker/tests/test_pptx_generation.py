@@ -1549,6 +1549,69 @@ def test_build_initial_slide_model_does_not_promote_background_with_only_hidden_
     assert "role" not in background.style
 
 
+def test_build_initial_slide_model_does_not_promote_late_dominant_image_above_text():
+    model = build_initial_slide_model(
+        {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "width": 960,
+                    "height": 540,
+                    "text": "Foreground Title",
+                    "text_blocks": [
+                        {
+                            "type": "text",
+                            "bbox": [72, 80, 360, 110],
+                            "lines": [
+                                {
+                                    "bbox": [72, 80, 360, 110],
+                                    "spans": [
+                                        {
+                                            "text": "Foreground Title",
+                                            "bbox": [72, 80, 360, 110],
+                                            "size": 24,
+                                            "seqno": 1,
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                        {
+                            "type": "image",
+                            "bbox": [320, 220, 460, 340],
+                            "source": "objects/images/page-001-logo.png",
+                            "content_hash": "same-pixels",
+                            "seqno": 2,
+                        },
+                        {
+                            "type": "image",
+                            "bbox": [320, 220, 460, 340],
+                            "source": "objects/images/page-001-logo-copy.png",
+                            "content_hash": "same-pixels",
+                            "seqno": 3,
+                        },
+                        {
+                            "type": "image",
+                            "bbox": [0, 60, 960, 540],
+                            "source": "objects/images/page-001-background.png",
+                            "seqno": 4,
+                        },
+                    ],
+                    "drawings": [],
+                }
+            ]
+        }
+    )
+
+    dominant = next(element for element in model.slides[0].elements if element.id == "p1-image-3")
+    assert [element.id for element in model.slides[0].elements] == [
+        "p1-text-1",
+        "p1-image-1",
+        "p1-image-3",
+    ]
+    assert "role" not in dominant.style
+
+
 def test_build_initial_slide_model_keeps_same_geometry_images_with_different_sources():
     model = build_initial_slide_model(
         {

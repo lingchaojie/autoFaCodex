@@ -494,8 +494,10 @@ def _duplicate_background_fragment_keys(
 
 def _has_editable_foreground(
     positioned: list[tuple[int, int, SlideElement]],
-    dominant_background: SlideElement,
+    dominant_entry: tuple[int, int, SlideElement],
 ) -> bool:
+    dominant_seq, dominant_index, dominant_background = dominant_entry
+
     def is_visible_foreground(element: SlideElement) -> bool:
         if element.id == dominant_background.id:
             return False
@@ -511,8 +513,8 @@ def _has_editable_foreground(
         return False
 
     return any(
-        is_visible_foreground(element)
-        for _seq, _index, element in positioned
+        (seq, index) > (dominant_seq, dominant_index) and is_visible_foreground(element)
+        for seq, index, element in positioned
     )
 
 
@@ -532,7 +534,7 @@ def _apply_dominant_background_strategy(
     dominant_area_ratio = _element_area_ratio_on_slide(dominant, size)
     if (
         dominant_area_ratio >= DOMINANT_BACKGROUND_MIN_AREA_RATIO
-        and _has_editable_foreground(positioned, dominant)
+        and _has_editable_foreground(positioned, dominant_entry)
     ):
         dominant.style = {**dominant.style, "role": "background"}
     kept: list[tuple[int, int, SlideElement]] = []
