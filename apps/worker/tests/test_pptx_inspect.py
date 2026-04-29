@@ -151,3 +151,46 @@ def test_inspect_pptx_detects_tiled_full_page_pictures(tmp_path: Path):
     assert page["largest_picture_area_ratio"] == pytest.approx(0.25, abs=0.01)
     assert page["picture_coverage_ratio"] > 0.98
     assert page["has_full_page_picture"] is True
+
+
+def test_inspect_pptx_reports_text_box_count_and_geometries(tmp_path: Path):
+    model = _model(
+        {
+            "page_number": 1,
+            "size": {"width": 10, "height": 7.5},
+            "elements": [
+                {
+                    "id": "title",
+                    "type": "text",
+                    "text": "Editable Title",
+                    "x": 1,
+                    "y": 1,
+                    "w": 4,
+                    "h": 0.6,
+                    "style": {"font_size": 24},
+                },
+                {
+                    "id": "subtitle",
+                    "type": "text",
+                    "text": "Editable Subtitle",
+                    "x": 2,
+                    "y": 2,
+                    "w": 3,
+                    "h": 0.4,
+                    "style": {"font_size": 14},
+                },
+            ],
+            "raster_fallback_regions": [],
+        }
+    )
+    output = tmp_path / "candidate.pptx"
+    generate_pptx(model, output)
+
+    inspection = inspect_pptx_editability(output)
+
+    page = inspection["pages"][0]
+    assert page["text_box_count"] == 2
+    assert page["text_box_geometries"] == [
+        {"x": pytest.approx(1), "y": pytest.approx(1), "w": pytest.approx(4), "h": pytest.approx(0.6)},
+        {"x": pytest.approx(2), "y": pytest.approx(2), "w": pytest.approx(3), "h": pytest.approx(0.4)},
+    ]

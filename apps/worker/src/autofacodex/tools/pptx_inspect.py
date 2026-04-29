@@ -45,6 +45,10 @@ def _geometry(node: ET.Element) -> dict[str, float]:
     }
 
 
+def _shape_text(node: ET.Element) -> str:
+    return "".join(text_node.text or "" for text_node in node.findall(".//a:t", NS)).strip()
+
+
 def _area_ratio(geometry: dict[str, float], slide_width: float, slide_height: float) -> float:
     slide_area = slide_width * slide_height
     if slide_area <= 0:
@@ -118,8 +122,13 @@ def inspect_pptx_editability(pptx_path: Path) -> dict:
         for slide_name in slide_names:
             root = ET.fromstring(archive.read(slide_name))
             nodes = list(root.iter())
-            pictures = [_geometry(node) for node in root.findall(".//p:pic", NS)]
-            shapes = [_geometry(node) for node in root.findall(".//p:sp", NS)]
+            picture_nodes = root.findall(".//p:pic", NS)
+            shape_nodes = root.findall(".//p:sp", NS)
+            pictures = [_geometry(node) for node in picture_nodes]
+            shapes = [_geometry(node) for node in shape_nodes]
+            text_box_geometries = [
+                _geometry(node) for node in shape_nodes if _shape_text(node)
+            ]
             text_runs = [node.text or "" for node in root.findall(".//a:t", NS)]
             picture_area_ratios = [
                 _area_ratio(geometry, slide_width, slide_height) for geometry in pictures
@@ -138,6 +147,8 @@ def inspect_pptx_editability(pptx_path: Path) -> dict:
                     "text": "\n".join(text_runs),
                     "picture_geometries": pictures,
                     "shape_geometries": shapes,
+                    "text_box_count": len(text_box_geometries),
+                    "text_box_geometries": text_box_geometries,
                     "largest_picture_area_ratio": largest_picture_area_ratio,
                     "total_picture_area_ratio": total_picture_area_ratio,
                     "picture_coverage_ratio": picture_coverage_ratio,
