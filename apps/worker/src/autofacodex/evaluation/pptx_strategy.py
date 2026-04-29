@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 from typing import Any
 
@@ -14,16 +15,20 @@ STRATEGIES = (
 
 def _number(value: object) -> float:
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        number = float(value)
+    except (OverflowError, TypeError, ValueError):
         return 0.0
+    if not math.isfinite(number):
+        return 0.0
+    return number
 
 
 def _count(page: dict[str, Any], field: str) -> int:
     try:
-        return int(page.get(field, 0) or 0)
-    except (TypeError, ValueError):
+        count = int(page.get(field, 0) or 0)
+    except (OverflowError, TypeError, ValueError):
         return 0
+    return max(0, count)
 
 
 def _area_ratio(geometry: dict[str, Any], size: dict[str, Any]) -> float:
@@ -33,8 +38,22 @@ def _area_ratio(geometry: dict[str, Any], size: dict[str, Any]) -> float:
         return 0.0
     return max(
         0.0,
-        min(1.0, _number(geometry.get("w")) * _number(geometry.get("h")) / (width * height)),
+        min(
+            1.0,
+            _number(geometry.get("w")) * _number(geometry.get("h")) / (width * height),
+        ),
     )
+
+
+def _has_finite_geometry(geometry: dict[str, Any]) -> bool:
+    for field in ("x", "y", "w", "h"):
+        try:
+            number = float(geometry.get(field))
+        except (OverflowError, TypeError, ValueError):
+            return False
+        if not math.isfinite(number):
+            return False
+    return True
 
 
 def classify_slide_strategy(page: dict[str, Any]) -> str:
@@ -60,6 +79,8 @@ def _dominant_background_candidates(page: dict[str, Any]) -> list[dict[str, Any]
     candidates = []
     for geometry in page.get("picture_geometries", []):
         if not isinstance(geometry, dict):
+            continue
+        if not _has_finite_geometry(geometry):
             continue
         area_ratio = _area_ratio(geometry, size)
         if area_ratio >= 0.7:
