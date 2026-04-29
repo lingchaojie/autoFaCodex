@@ -4,11 +4,14 @@ import re
 import shutil
 
 from autofacodex.contracts import ValidatorReport
+from autofacodex.evaluation.compare_ideal_pptx import compare_pptx_structure
 from autofacodex.workflows.pdf_to_ppt import run_pdf_to_ppt
 
 
 _VALIDATOR_REPORT_PATTERN = re.compile(r"^validator\.v(\d+)\.json$")
 _STATUS_PRIORITY = ("failed", "repair_needed", "manual_review", "pass")
+_SAMPLE_TASK_PATTERN = re.compile(r"^sample-\d{3}-(?P<stem>.+)$")
+_REPO_ROOT = Path(__file__).resolve().parents[5]
 
 
 def discover_pdfs(samples_dir: Path) -> list[Path]:
@@ -56,6 +59,30 @@ def _resolved_aggregate_status(report: ValidatorReport) -> str:
     return "failed"
 
 
+def _sample_stem(task_dir: Path) -> str:
+    match = _SAMPLE_TASK_PATTERN.match(task_dir.name)
+    return match.group("stem") if match else task_dir.name
+
+
+def _ideal_pptx_path(task_dir: Path) -> Path:
+    return _REPO_ROOT / "pdf-to-ppt" / "example-output" / f"{_sample_stem(task_dir)}.pptx"
+
+
+def _ideal_comparison(task_dir: Path) -> dict | None:
+    final_pptx = task_dir / "output" / "final.pptx"
+    ideal_pptx = _ideal_pptx_path(task_dir)
+    if not final_pptx.is_file() or not ideal_pptx.is_file():
+        return None
+    comparison = compare_pptx_structure(final_pptx, ideal_pptx)
+    reports_dir = task_dir / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    (reports_dir / "ideal-comparison.json").write_text(
+        json.dumps(comparison, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return comparison
+
+
 def write_evaluation_summary(task_dirs: list[Path], output_root: Path) -> Path:
     reports = [_latest_validator_report(task_dir) for task_dir in task_dirs]
     resolved_statuses = [_resolved_aggregate_status(report) for report in reports]
@@ -99,6 +126,7 @@ def write_evaluation_summary(task_dirs: list[Path], output_root: Path) -> Path:
                 )
                 if report.pages
                 else 0.0,
+                "ideal_comparison": _ideal_comparison(task_dir),
             }
             for task_dir, report, status in zip(task_dirs, reports, resolved_statuses)
         ],

@@ -6,6 +6,9 @@ import uuid
 
 from autofacodex.tools.pdf_render import render_pdf_pages
 
+WORKER_ROOT = Path(__file__).resolve().parents[3]
+WINDOWS_FONTCONFIG_FILE = WORKER_ROOT / "fontconfig-windows-fonts.conf"
+
 
 @dataclass(frozen=True)
 class PptxRenderResult:
@@ -22,6 +25,14 @@ def _profile_dir(profile_root: Path | None, output_dir: Path, pptx_path: Path) -
     return root / f"profile-{pptx_path.stem}-{uuid.uuid4().hex}"
 
 
+def _libreoffice_env() -> dict[str, str] | None:
+    if not WINDOWS_FONTCONFIG_FILE.is_file():
+        return None
+    env = os.environ.copy()
+    env.setdefault("FONTCONFIG_FILE", str(WINDOWS_FONTCONFIG_FILE))
+    return env
+
+
 def render_pptx_to_pdf(
     pptx_path: Path,
     output_dir: Path,
@@ -31,14 +42,6 @@ def render_pptx_to_pdf(
     output_dir.mkdir(parents=True, exist_ok=True)
     profile_dir = _profile_dir(profile_root, output_dir, pptx_path)
     profile_dir.mkdir(parents=True, exist_ok=True)
-    env = {
-        **os.environ,
-        "HOME": str(profile_dir / "home"),
-        "XDG_RUNTIME_DIR": str(profile_dir / "runtime"),
-    }
-    Path(env["HOME"]).mkdir(parents=True, exist_ok=True)
-    Path(env["XDG_RUNTIME_DIR"]).mkdir(parents=True, exist_ok=True)
-    Path(env["XDG_RUNTIME_DIR"]).chmod(0o700)
     result = subprocess.run(
         [
             libreoffice_bin,
@@ -46,15 +49,15 @@ def render_pptx_to_pdf(
             "--convert-to",
             "pdf",
             f"-env:UserInstallation={profile_dir.resolve().as_uri()}",
-            "--outdir",
-            str(output_dir),
-            str(pptx_path),
-        ],
+        "--outdir",
+        str(output_dir),
+        str(pptx_path),
+    ],
         check=False,
+        env=_libreoffice_env(),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        env=env,
     )
     output_pdf = output_dir / f"{pptx_path.stem}.pdf"
     if result.returncode != 0:

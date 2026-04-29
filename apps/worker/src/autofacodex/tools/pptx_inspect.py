@@ -1,3 +1,5 @@
+import math
+import posixpath
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -5,9 +7,12 @@ from zipfile import ZipFile
 
 
 SLIDE_XML_RE = re.compile(r"^ppt/slides/slide\d+\.xml$")
+OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 NS = {
     "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
     "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+    "r": OFFICE_REL_NS,
 }
 EMU_PER_INCH = 914400
 
@@ -20,18 +25,87 @@ def _slide_number(slide_name: str) -> int:
     return int(slide_name.removeprefix("ppt/slides/slide").removesuffix(".xml"))
 
 
+def _sorted_slide_names(archive: ZipFile) -> list[str]:
+    return sorted(
+        (name for name in archive.namelist() if SLIDE_XML_RE.fullmatch(name)),
+        key=_slide_number,
+    )
+
+
+def _normalize_relationship_target(target: str) -> str:
+    target = target.replace("\\", "/")
+    if target.startswith("/"):
+        return posixpath.normpath(target.lstrip("/"))
+    if target.startswith("ppt/"):
+        return posixpath.normpath(target)
+    return posixpath.normpath(posixpath.join("ppt", target))
+
+
+def _presentation_relationship_targets(archive: ZipFile) -> dict[str, str] | None:
+    relationship_name = "ppt/_rels/presentation.xml.rels"
+    if relationship_name not in archive.namelist():
+        return None
+    root = ET.fromstring(archive.read(relationship_name))
+    relationships = {}
+    for relationship in root.findall(f"{{{PACKAGE_REL_NS}}}Relationship"):
+        relationship_id = relationship.attrib.get("Id")
+        target = relationship.attrib.get("Target")
+        if relationship_id and target:
+            relationships[relationship_id] = _normalize_relationship_target(target)
+    return relationships
+
+
+def _presentation_slide_names(archive: ZipFile, slide_names: list[str]) -> list[str]:
+    if "ppt/presentation.xml" not in archive.namelist():
+        return slide_names
+    try:
+        relationships = _presentation_relationship_targets(archive)
+        if not relationships:
+            return slide_names
+        root = ET.fromstring(archive.read("ppt/presentation.xml"))
+    except (ET.ParseError, KeyError):
+        return slide_names
+
+    slide_id_list = root.find(".//p:sldIdLst", NS)
+    if slide_id_list is None:
+        return slide_names
+
+    slide_name_set = set(slide_names)
+    ordered_slide_names = []
+    for slide_id in slide_id_list.findall("p:sldId", NS):
+        relationship_id = slide_id.attrib.get(f"{{{OFFICE_REL_NS}}}id")
+        target = relationships.get(relationship_id or "")
+        if target in slide_name_set and target not in ordered_slide_names:
+            ordered_slide_names.append(target)
+    if not ordered_slide_names:
+        return slide_names
+
+    return ordered_slide_names
+
+
 def _emu(value: str | None) -> float:
     return float(value or 0) / EMU_PER_INCH
 
 
 def _presentation_size(archive: ZipFile) -> tuple[float, float]:
+    default_size = (10.0, 7.5)
     if "ppt/presentation.xml" not in archive.namelist():
-        return (10.0, 7.5)
-    root = ET.fromstring(archive.read("ppt/presentation.xml"))
+        return default_size
+    try:
+        root = ET.fromstring(archive.read("ppt/presentation.xml"))
+    except ET.ParseError:
+        return default_size
     size = root.find(".//p:sldSz", NS)
     if size is None:
-        return (10.0, 7.5)
-    return (_emu(size.attrib.get("cx")), _emu(size.attrib.get("cy")))
+        return default_size
+    try:
+        width = _emu(size.attrib.get("cx"))
+        height = _emu(size.attrib.get("cy"))
+    except (TypeError, ValueError, OverflowError):
+        return default_size
+    if not math.isfinite(width) or not math.isfinite(height) or width <= 0 or height <= 0:
+        return default_size
+    return (width, height)
 
 
 def _geometry(node: ET.Element) -> dict[str, float]:
@@ -43,6 +117,10 @@ def _geometry(node: ET.Element) -> dict[str, float]:
         "w": _emu(ext.attrib.get("cx") if ext is not None else None),
         "h": _emu(ext.attrib.get("cy") if ext is not None else None),
     }
+
+
+def _shape_text(node: ET.Element) -> str:
+    return "".join(text_node.text or "" for text_node in node.findall(".//a:t", NS)).strip()
 
 
 def _area_ratio(geometry: dict[str, float], slide_width: float, slide_height: float) -> float:
@@ -110,16 +188,21 @@ def _coverage_ratio(
 def inspect_pptx_editability(pptx_path: Path) -> dict:
     with ZipFile(pptx_path) as archive:
         slide_width, slide_height = _presentation_size(archive)
-        slide_names = sorted(
-            (name for name in archive.namelist() if SLIDE_XML_RE.fullmatch(name)),
-            key=_slide_number,
-        )
+        slide_names = _presentation_slide_names(archive, _sorted_slide_names(archive))
         pages = []
         for slide_name in slide_names:
-            root = ET.fromstring(archive.read(slide_name))
+            try:
+                root = ET.fromstring(archive.read(slide_name))
+            except ET.ParseError as exc:
+                raise RuntimeError(f"Failed to parse {pptx_path}: {slide_name}") from exc
             nodes = list(root.iter())
-            pictures = [_geometry(node) for node in root.findall(".//p:pic", NS)]
-            shapes = [_geometry(node) for node in root.findall(".//p:sp", NS)]
+            picture_nodes = root.findall(".//p:pic", NS)
+            shape_nodes = root.findall(".//p:sp", NS)
+            pictures = [_geometry(node) for node in picture_nodes]
+            shapes = [_geometry(node) for node in shape_nodes]
+            text_box_geometries = [
+                _geometry(node) for node in shape_nodes if _shape_text(node)
+            ]
             text_runs = [node.text or "" for node in root.findall(".//a:t", NS)]
             picture_area_ratios = [
                 _area_ratio(geometry, slide_width, slide_height) for geometry in pictures
@@ -135,9 +218,11 @@ def inspect_pptx_editability(pptx_path: Path) -> dict:
                     "pictures": sum(1 for node in nodes if _localname(node.tag) == "pic"),
                     "shapes": sum(1 for node in nodes if _localname(node.tag) == "sp"),
                     "tables": sum(1 for node in nodes if _localname(node.tag) == "tbl"),
-                    "text": "".join(text_runs),
+                    "text": "\n".join(text_runs),
                     "picture_geometries": pictures,
                     "shape_geometries": shapes,
+                    "text_box_count": len(text_box_geometries),
+                    "text_box_geometries": text_box_geometries,
                     "largest_picture_area_ratio": largest_picture_area_ratio,
                     "total_picture_area_ratio": total_picture_area_ratio,
                     "picture_coverage_ratio": picture_coverage_ratio,
