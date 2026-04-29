@@ -117,16 +117,15 @@ def test_inspect_pptx_editability_counts_slide_xml_nodes_and_ignores_non_slides(
 
     report = inspect_pptx_editability(pptx)
 
-    assert report == {
-        "pages": [
-            {
-                "slide": "ppt/slides/slide1.xml",
-                "text_runs": 1,
-                "pictures": 1,
-                "shapes": 1,
-            }
-        ]
-    }
+    assert len(report["pages"]) == 1
+    page = report["pages"][0]
+    assert page["slide"] == "ppt/slides/slide1.xml"
+    assert page["text_runs"] == 1
+    assert page["pictures"] == 1
+    assert page["shapes"] == 1
+    assert page["text"] == " Title "
+    assert page["largest_picture_area_ratio"] == 0.0
+    assert page["has_full_page_picture"] is False
 
 
 def test_inspect_pptx_editability_sorts_slides_numerically(tmp_path: Path):

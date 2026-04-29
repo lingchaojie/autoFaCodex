@@ -25,6 +25,30 @@ def test_validator_prompt_requires_every_page():
     assert "evidence paths" in text
 
 
+def test_runner_prompt_requires_evidence_based_slide_model_repair():
+    text = Path("agent_assets/runner/runner.system.md").read_text(encoding="utf-8")
+    assert "reports/validator.vN.json" in text
+    assert "slides/slide-model.vN.json" in text
+    assert "runner-repair.vN.json" in text
+    assert "Do not validate your own output" in text
+    assert "bounded raster fallback" in text
+    assert "use deterministic project tools for slide-model repair and PPTX generation" in text
+    assert (
+        "must not run rendering, diffing, scoring, or inspection to make "
+        "pass/fail validation decisions"
+    ) in text
+
+
+def test_validator_prompt_requires_real_evidence_paths():
+    text = Path("agent_assets/validator/validator.system.md").read_text(encoding="utf-8")
+    assert "PDF render" in text
+    assert "PPTX render" in text
+    assert "visual diff" in text
+    assert "text coverage" in text
+    assert "full-page picture" in text
+    assert "evidence_paths" in text
+
+
 def test_run_codex_agent_validates_auth_and_runs_with_stdin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     task_dir = tmp_path / "task"
     task_dir.mkdir()

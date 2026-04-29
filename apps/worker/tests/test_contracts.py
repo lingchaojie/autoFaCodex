@@ -170,3 +170,60 @@ def test_validator_report_rejects_bad_issue_region_length(region: list[float]):
                 }
             ],
         )
+
+
+def test_validator_report_accepts_page_and_issue_evidence_paths():
+    report = ValidatorReport(
+        task_id="task_123",
+        attempt=1,
+        pages=[
+            {
+                "page_number": 1,
+                "status": "repair_needed",
+                "visual_score": 0.75,
+                "editable_score": 0.4,
+                "text_coverage_score": 0.9,
+                "raster_fallback_ratio": 0.6,
+                "evidence_paths": {
+                    "pdf_render": "renders/pdf/page-001.png",
+                    "ppt_render": "output/rendered-pages-v1/page-001.png",
+                    "diff": "output/diagnostics-v1/page-001-diff.png",
+                    "inspection": "reports/inspection.v1.json",
+                    "text_coverage": "reports/text-coverage.v1.json",
+                },
+                "issues": [
+                    {
+                        "type": "editability",
+                        "message": "Large raster region detected",
+                        "suggested_action": "Reconstruct visible text as editable text boxes",
+                        "evidence_paths": ["reports/inspection.v1.json"],
+                    }
+                ],
+            }
+        ],
+    )
+
+    page = report.pages[0]
+    assert page.evidence_paths["diff"] == "output/diagnostics-v1/page-001-diff.png"
+    assert page.issues[0].evidence_paths == ["reports/inspection.v1.json"]
+
+
+def test_validator_report_accepts_aggregate_status():
+    report = ValidatorReport(
+        task_id="task_123",
+        attempt=1,
+        aggregate_status="repair_needed",
+        pages=[
+            {
+                "page_number": 1,
+                "status": "repair_needed",
+                "visual_score": 0.75,
+                "editable_score": 0.4,
+                "text_coverage_score": 0.9,
+                "raster_fallback_ratio": 0.6,
+                "issues": [],
+            }
+        ],
+    )
+
+    assert report.aggregate_status == "repair_needed"

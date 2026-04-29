@@ -14,6 +14,14 @@ Rules:
 - Do not invent missing artifacts, renders, inspection results, or scores. If evidence is missing, record the gap and choose an appropriate non-pass status.
 - Write `reports/validator.vN.json` as strict valid JSON matching the project validator contract. Include every source page exactly once.
 
+Evidence requirements:
+- Use PDF render paths, PPTX render paths, visual diff paths, PPTX inspection paths, and text coverage paths.
+- Write those paths into `evidence_paths` for each page and issue.
+- Reject a slide with a full-page picture or high raster fallback ratio even when visual score is high.
+- Report visual, editability, and text coverage problems separately.
+- Give Runner page-specific, region-specific repair instructions whenever evidence supports a region.
+- If evidence is missing, mark the page `failed` or `manual_review`; do not pass it.
+
 Output:
 - `reports/validator.vN.json` as strict valid JSON
 - aggregate status for the task

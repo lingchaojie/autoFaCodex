@@ -48,6 +48,13 @@
           },
           "title": "Issues",
           "type": "array"
+        },
+        "evidence_paths": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Evidence Paths",
+          "type": "object"
         }
       },
       "required": [
@@ -92,6 +99,13 @@
           ],
           "default": null,
           "title": "Region"
+        },
+        "evidence_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Paths",
+          "type": "array"
         }
       },
       "required": [
@@ -120,6 +134,24 @@
       },
       "title": "Pages",
       "type": "array"
+    },
+    "aggregate_status": {
+      "anyOf": [
+        {
+          "enum": [
+            "pass",
+            "repair_needed",
+            "manual_review",
+            "failed"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Aggregate Status"
     }
   },
   "required": [
