@@ -6,10 +6,16 @@ from autofacodex.contracts import PageValidation, SlideModel, ValidatorIssue, Va
 from autofacodex.tools.pptx_inspect import inspect_pptx_editability
 from autofacodex.tools.pptx_render import render_pptx_pages
 from autofacodex.tools.text_coverage import compare_text_coverage
-from autofacodex.tools.visual_diff import compare_images, write_compare_image, write_diff_image
+from autofacodex.tools.visual_diff import (
+    compare_images,
+    extract_diff_regions,
+    write_compare_image,
+    write_diff_image,
+)
 
 
 PageStatus = Literal["pass", "repair_needed", "manual_review", "failed"]
+_DECLARED_BACKGROUND_PICTURE_MIN_RATIO = 0.7
 
 
 def _candidate_path(task_dir: Path, attempt: int) -> Path:
@@ -52,13 +58,14 @@ def _ratio_value(value: object) -> float:
 def _inspection_picture_ratio(inspection_page: dict) -> float:
     return max(
         _ratio_value(inspection_page.get("largest_picture_area_ratio")),
-        _ratio_value(inspection_page.get("total_picture_area_ratio")),
         _ratio_value(inspection_page.get("picture_coverage_ratio")),
     )
 
 
-def _editable_score(inspection_page: dict) -> float:
-    if inspection_page.get("has_full_page_picture", False):
+def _editable_score(
+    inspection_page: dict, *, has_declared_background_picture: bool
+) -> float:
+    if inspection_page.get("has_full_page_picture", False) and not has_declared_background_picture:
         return 0.0
     editable_objects = (
         int(inspection_page.get("text_runs", 0) or 0)
@@ -68,15 +75,36 @@ def _editable_score(inspection_page: dict) -> float:
     return 1.0 if editable_objects > 0 else 0.0
 
 
+def _element_area_ratio(element, slide) -> float:
+    slide_area = slide.size.width * slide.size.height
+    if slide_area <= 0:
+        return 0.0
+    return _clamp_ratio((element.w * element.h) / slide_area)
+
+
+def _declared_background_picture_ratio(model: SlideModel, page_index: int) -> float:
+    if page_index < 0 or page_index >= len(model.slides):
+        return 0.0
+    slide = model.slides[page_index]
+    return min(
+        1.0,
+        sum(
+            _element_area_ratio(element, slide)
+            for element in slide.elements
+            if element.type == "image" and element.style.get("role") == "background"
+        ),
+    )
+
+
 def _status_from_scores(
     *,
-    full_page_picture: bool,
+    excessive_raster: bool,
     raster_ratio: float,
     editable_score: float,
     visual_score: float,
     text_score: float,
 ) -> PageStatus:
-    if full_page_picture or raster_ratio >= 0.5 or editable_score < 0.5:
+    if excessive_raster or raster_ratio >= 0.5 or editable_score < 0.5:
         return "repair_needed"
     if visual_score < 0.85 or text_score < 0.8:
         return "repair_needed"
@@ -87,15 +115,16 @@ def _status_from_scores(
 
 def _issues(
     *,
-    full_page_picture: bool,
+    excessive_raster: bool,
     raster_ratio: float,
     editable_score: float,
     visual_score: float,
     text_score: float,
     evidence_paths: dict[str, str],
+    largest_visual_region: dict | None,
 ) -> list[ValidatorIssue]:
     issues: list[ValidatorIssue] = []
-    if full_page_picture or raster_ratio >= 0.5 or editable_score < 0.5:
+    if excessive_raster or raster_ratio >= 0.5 or editable_score < 0.5:
         issues.append(
             ValidatorIssue(
                 type="editability",
@@ -105,12 +134,20 @@ def _issues(
             )
         )
     if visual_score < 0.9:
+        region = largest_visual_region["region"] if largest_visual_region else None
+        repair_hints = {
+            "action": "adjust_bbox",
+            "target_element_types": ["image", "shape", "text", "path"],
+            "diff_area_ratio": largest_visual_region["area_ratio"] if largest_visual_region else 0,
+        }
         issues.append(
             ValidatorIssue(
                 type="visual_fidelity",
                 message="Rendered PPTX differs from the source PDF page",
                 suggested_action="Use the diff render to adjust positions, sizes, colors, and missing regions",
+                region=region,
                 evidence_paths=[evidence_paths["diff"], evidence_paths["compare"]],
+                repair_hints=repair_hints,
             )
         )
     if text_score < 0.8:
@@ -216,6 +253,13 @@ def validate_candidate(task_dir: Path, attempt: int = 1) -> ValidatorReport:
         write_diff_image(pdf_render, ppt_render, diff_path)
         write_compare_image(pdf_render, ppt_render, compare_path)
         visual_score = compare_images(pdf_render, ppt_render)
+        visual_regions = extract_diff_regions(
+            pdf_render,
+            ppt_render,
+            threshold=0.05,
+            min_area_ratio=0.001,
+        )
+        largest_visual_region = visual_regions[0] if visual_regions else None
 
         inspection_page = (
             inspection_pages[page_index]
@@ -229,11 +273,24 @@ def validate_candidate(task_dir: Path, attempt: int = 1) -> ValidatorReport:
         text_score = float(text_coverage["score"])
 
         full_page_picture = bool(inspection_page.get("has_full_page_picture", False))
+        declared_background_picture_ratio = _declared_background_picture_ratio(
+            slide_model, page_index
+        )
+        has_declared_background_picture = (
+            declared_background_picture_ratio >= _DECLARED_BACKGROUND_PICTURE_MIN_RATIO
+        )
+        inspection_picture_ratio = _inspection_picture_ratio(inspection_page)
+        excessive_raster = (
+            inspection_picture_ratio >= 0.5 and not has_declared_background_picture
+        )
         raster_ratio = max(
             _raster_ratio(slide_model, page_index),
-            _inspection_picture_ratio(inspection_page),
+            0.0 if has_declared_background_picture else inspection_picture_ratio,
         )
-        editable_score = _editable_score(inspection_page)
+        editable_score = _editable_score(
+            inspection_page,
+            has_declared_background_picture=has_declared_background_picture,
+        )
         evidence_paths = {
             "pdf_render": _relative_path(pdf_render, task_dir),
             "ppt_render": _relative_path(ppt_render, task_dir),
@@ -244,7 +301,8 @@ def validate_candidate(task_dir: Path, attempt: int = 1) -> ValidatorReport:
         }
 
         status = _status_from_scores(
-            full_page_picture=full_page_picture,
+            excessive_raster=excessive_raster
+            or (full_page_picture and not has_declared_background_picture),
             raster_ratio=raster_ratio,
             editable_score=editable_score,
             visual_score=visual_score,
@@ -259,12 +317,14 @@ def validate_candidate(task_dir: Path, attempt: int = 1) -> ValidatorReport:
                 text_coverage_score=text_score,
                 raster_fallback_ratio=raster_ratio,
                 issues=_issues(
-                    full_page_picture=full_page_picture,
+                    excessive_raster=excessive_raster
+                    or (full_page_picture and not has_declared_background_picture),
                     raster_ratio=raster_ratio,
                     editable_score=editable_score,
                     visual_score=visual_score,
                     text_score=text_score,
                     evidence_paths=evidence_paths,
+                    largest_visual_region=largest_visual_region,
                 ),
                 evidence_paths=evidence_paths,
             )

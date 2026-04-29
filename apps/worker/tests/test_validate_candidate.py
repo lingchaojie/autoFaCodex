@@ -14,6 +14,7 @@ def _write_task(
     ppt_text: str,
     full_page_picture: bool = False,
     model_page_number: int = 1,
+    model_elements: list[dict] | None = None,
 ) -> None:
     (task_dir / "renders" / "pdf").mkdir(parents=True)
     (task_dir / "output").mkdir(parents=True)
@@ -34,7 +35,7 @@ def _write_task(
             {
                 "page_number": model_page_number,
                 "size": {"width": 10, "height": 7.5},
-                "elements": [],
+                "elements": model_elements or [],
                 "raster_fallback_regions": [],
             }
         ]
@@ -77,6 +78,10 @@ def _stub_validation_tools(task_dir: Path, monkeypatch) -> None:
         )(),
     )
     monkeypatch.setattr("autofacodex.tools.validate_candidate.compare_images", lambda *_args: 0.96)
+    monkeypatch.setattr(
+        "autofacodex.tools.validate_candidate.extract_diff_regions",
+        lambda *_args, **_kwargs: [],
+    )
     monkeypatch.setattr(
         "autofacodex.tools.validate_candidate.write_diff_image", lambda *_args: _args[2]
     )
@@ -144,6 +149,106 @@ def test_validate_candidate_rejects_full_page_picture(tmp_path: Path, monkeypatc
     assert any(issue.type == "editability" for issue in report.pages[0].issues)
 
 
+def test_validate_candidate_allows_declared_pdf_background_picture_with_editable_foreground(
+    tmp_path: Path, monkeypatch
+):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    _write_task(
+        task_dir,
+        ppt_text="Editable Title",
+        full_page_picture=True,
+        model_elements=[
+            {
+                "id": "background",
+                "type": "image",
+                "source": "extracted/objects/images/background.png",
+                "x": 0,
+                "y": 0,
+                "w": 10,
+                "h": 7.5,
+                "style": {"role": "background"},
+            },
+            {
+                "id": "title",
+                "type": "text",
+                "text": "Editable Title",
+                "x": 1,
+                "y": 1,
+                "w": 4,
+                "h": 0.5,
+            },
+        ],
+    )
+    _stub_validation_tools(task_dir, monkeypatch)
+
+    report = validate_candidate(task_dir, attempt=1)
+
+    assert report.aggregate_status == "pass"
+    assert report.pages[0].status == "pass"
+    assert report.pages[0].raster_fallback_ratio == 0
+    assert report.pages[0].editable_score == 1.0
+
+
+def test_validate_candidate_allows_large_declared_background_with_editable_foreground(
+    tmp_path: Path, monkeypatch
+):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    _write_task(
+        task_dir,
+        ppt_text="Editable Title",
+        model_elements=[
+            {
+                "id": "background",
+                "type": "image",
+                "source": "extracted/objects/images/background.png",
+                "x": 0,
+                "y": 0.5,
+                "w": 10,
+                "h": 6.5,
+                "style": {"role": "background"},
+            },
+            {
+                "id": "title",
+                "type": "text",
+                "text": "Editable Title",
+                "x": 1,
+                "y": 1,
+                "w": 4,
+                "h": 0.5,
+            },
+        ],
+    )
+    (task_dir / "reports" / "inspection.v1.json").write_text(
+        json.dumps(
+            {
+                "pages": [
+                    {
+                        "slide": "ppt/slides/slide1.xml",
+                        "text_runs": 1,
+                        "pictures": 1,
+                        "shapes": 1,
+                        "tables": 0,
+                        "text": "Editable Title",
+                        "largest_picture_area_ratio": 0.86,
+                        "picture_coverage_ratio": 0.86,
+                        "has_full_page_picture": False,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    _stub_validation_tools(task_dir, monkeypatch)
+
+    report = validate_candidate(task_dir, attempt=1)
+
+    assert report.aggregate_status == "pass"
+    assert report.pages[0].status == "pass"
+    assert report.pages[0].raster_fallback_ratio == 0
+
+
 def test_validate_candidate_rejects_tiled_full_page_picture_coverage(
     tmp_path: Path, monkeypatch
 ):
@@ -178,6 +283,68 @@ def test_validate_candidate_rejects_tiled_full_page_picture_coverage(
     assert report.pages[0].status == "repair_needed"
     assert report.pages[0].raster_fallback_ratio == pytest.approx(0.99)
     assert any(issue.type == "editability" for issue in report.pages[0].issues)
+
+
+def test_validate_candidate_allows_many_bounded_images_without_fallback_regions(
+    tmp_path: Path, monkeypatch
+):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    _write_task(task_dir, ppt_text="Editable Title")
+    (task_dir / "reports" / "inspection.v1.json").write_text(
+        json.dumps(
+            {
+                "pages": [
+                    {
+                        "slide": "ppt/slides/slide1.xml",
+                        "text_runs": 1,
+                        "pictures": 8,
+                        "shapes": 1,
+                        "tables": 0,
+                        "text": "Editable Title",
+                        "largest_picture_area_ratio": 0.2,
+                        "total_picture_area_ratio": 0.8,
+                        "picture_coverage_ratio": 0.4,
+                        "has_full_page_picture": False,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    _stub_validation_tools(task_dir, monkeypatch)
+
+    report = validate_candidate(task_dir, attempt=1)
+
+    assert report.aggregate_status == "pass"
+    assert report.pages[0].status == "pass"
+    assert report.pages[0].raster_fallback_ratio == pytest.approx(0.4)
+
+
+def test_validate_candidate_adds_visual_diff_region_and_repair_hint(
+    tmp_path: Path, monkeypatch
+):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    _write_task(task_dir, ppt_text="Editable Title")
+    _stub_validation_tools(task_dir, monkeypatch)
+
+    monkeypatch.setattr("autofacodex.tools.validate_candidate.compare_images", lambda *_args: 0.86)
+    def fake_extract_diff_regions(*_args, **kwargs):
+        assert kwargs == {"threshold": 0.05, "min_area_ratio": 0.001}
+        return [{"region": [0.2, 0.3, 0.5, 0.6], "area_ratio": 0.09}]
+
+    monkeypatch.setattr(
+        "autofacodex.tools.validate_candidate.extract_diff_regions",
+        fake_extract_diff_regions,
+    )
+
+    report = validate_candidate(task_dir, attempt=1)
+
+    visual_issue = next(issue for issue in report.pages[0].issues if issue.type == "visual_fidelity")
+    assert visual_issue.region == [0.2, 0.3, 0.5, 0.6]
+    assert visual_issue.repair_hints["action"] == "adjust_bbox"
+    assert visual_issue.repair_hints["diff_area_ratio"] == 0.09
 
 
 def test_validate_candidate_rejects_inspection_page_count_mismatch(

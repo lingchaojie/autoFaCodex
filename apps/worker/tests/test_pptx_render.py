@@ -1,5 +1,4 @@
 from pathlib import Path
-import stat
 import subprocess
 from unittest.mock import patch
 
@@ -10,6 +9,12 @@ from autofacodex.tools.pptx_render import render_pptx_pages, render_pptx_to_pdf
 
 def _user_installation_arg(args: list[str]) -> str:
     return next(arg for arg in args if arg.startswith("-env:UserInstallation="))
+
+
+def _assert_preserves_runtime_env_with_fontconfig(kwargs: dict) -> None:
+    env = kwargs["env"]
+    assert env["FONTCONFIG_FILE"].endswith("fontconfig-windows-fonts.conf")
+    assert "HOME" in env
 
 
 def test_render_pptx_to_pdf_uses_writable_profile_and_returns_pdf(tmp_path: Path):
@@ -31,7 +36,33 @@ def test_render_pptx_to_pdf_uses_writable_profile_and_returns_pdf(tmp_path: Path
     assert args[:3] == ["libreoffice", "--headless", "--convert-to"]
     assert any(str(arg).startswith("-env:UserInstallation=file://") for arg in args)
     assert run.call_args.kwargs["check"] is False
-    assert run.call_args.kwargs["env"]["HOME"].startswith(str(tmp_path / "profiles"))
+    _assert_preserves_runtime_env_with_fontconfig(run.call_args.kwargs)
+
+
+def test_render_pptx_to_pdf_uses_configured_fontconfig_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    pptx = tmp_path / "candidate.pptx"
+    pptx.write_bytes(b"pptx")
+    output_dir = tmp_path / "rendered-pdf"
+    expected_pdf = output_dir / "candidate.pdf"
+    fontconfig_file = tmp_path / "fontconfig.conf"
+    fontconfig_file.write_text("<fontconfig/>", encoding="utf-8")
+
+    def fake_run(args, **kwargs):
+        expected_pdf.write_bytes(b"%PDF-1.4")
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(
+        "autofacodex.tools.pptx_render.WINDOWS_FONTCONFIG_FILE",
+        fontconfig_file,
+        raising=False,
+    )
+
+    with patch("autofacodex.tools.pptx_render.subprocess.run", side_effect=fake_run) as run:
+        render_pptx_to_pdf(pptx, output_dir, profile_root=tmp_path / "profiles")
+
+    assert run.call_args.kwargs["env"]["FONTCONFIG_FILE"] == str(fontconfig_file)
 
 
 def test_render_pptx_to_pdf_defaults_profile_under_output_dir(tmp_path: Path):
@@ -48,9 +79,7 @@ def test_render_pptx_to_pdf_defaults_profile_under_output_dir(tmp_path: Path):
     with patch("autofacodex.tools.pptx_render.subprocess.run", side_effect=fake_run) as run:
         render_pptx_to_pdf(pptx, output_dir)
 
-    env = run.call_args.kwargs["env"]
-    assert env["HOME"].startswith(str(output_dir / ".libreoffice"))
-    assert env["XDG_RUNTIME_DIR"].startswith(str(output_dir / ".libreoffice"))
+    _assert_preserves_runtime_env_with_fontconfig(run.call_args.kwargs)
     assert _user_installation_arg(run.call_args.args[0]).startswith(
         f"-env:UserInstallation={(output_dir / '.libreoffice').resolve().as_uri()}"
     )
@@ -75,7 +104,7 @@ def test_render_pptx_to_pdf_uses_unique_profile_per_call(tmp_path: Path):
     assert _user_installation_arg(first_args) != _user_installation_arg(second_args)
 
 
-def test_render_pptx_to_pdf_creates_private_runtime_dir(tmp_path: Path):
+def test_render_pptx_to_pdf_does_not_override_home_or_runtime_env(tmp_path: Path):
     pptx = tmp_path / "candidate.pptx"
     pptx.write_bytes(b"pptx")
     output_dir = tmp_path / "rendered-pdf"
@@ -88,9 +117,7 @@ def test_render_pptx_to_pdf_creates_private_runtime_dir(tmp_path: Path):
     with patch("autofacodex.tools.pptx_render.subprocess.run", side_effect=fake_run) as run:
         render_pptx_to_pdf(pptx, output_dir, profile_root=tmp_path / "profiles")
 
-    runtime_dir = Path(run.call_args.kwargs["env"]["XDG_RUNTIME_DIR"])
-    assert runtime_dir.is_dir()
-    assert stat.S_IMODE(runtime_dir.stat().st_mode) == 0o700
+    _assert_preserves_runtime_env_with_fontconfig(run.call_args.kwargs)
 
 
 def test_render_pptx_to_pdf_reports_stdout_and_stderr_on_failure(tmp_path: Path):

@@ -123,8 +123,39 @@ def test_run_samples_writes_aggregate_report(tmp_path: Path, monkeypatch):
             "page_count": 1,
             "average_visual_score": 0.75,
             "min_visual_score": 0.75,
+            "ideal_comparison": None,
         }
     ]
+
+
+def test_write_evaluation_summary_includes_ideal_pptx_comparison(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    output_root = tmp_path / "evaluation"
+    task_dir = output_root / "sample-001-a"
+    _write_validator_report(task_dir)
+    final_pptx = task_dir / "output" / "final.pptx"
+    final_pptx.parent.mkdir(parents=True)
+    final_pptx.write_bytes(b"generated")
+    ideal_pptx = tmp_path / "a.pptx"
+    ideal_pptx.write_bytes(b"ideal")
+
+    expected = {"generated_slide_count": 1, "ideal_slide_count": 1, "pages": []}
+    monkeypatch.setattr(samples, "_ideal_pptx_path", lambda _task_dir: ideal_pptx, raising=False)
+    monkeypatch.setattr(
+        samples,
+        "compare_pptx_structure",
+        lambda generated_path, ideal_path: expected
+        if generated_path == final_pptx and ideal_path == ideal_pptx
+        else None,
+        raising=False,
+    )
+
+    summary_path = samples.write_evaluation_summary([task_dir], output_root)
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["samples"][0]["ideal_comparison"] == expected
 
 
 def test_write_evaluation_summary_derives_missing_aggregate_status(

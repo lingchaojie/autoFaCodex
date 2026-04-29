@@ -135,7 +135,7 @@ def inspect_pptx_editability(pptx_path: Path) -> dict:
                     "pictures": sum(1 for node in nodes if _localname(node.tag) == "pic"),
                     "shapes": sum(1 for node in nodes if _localname(node.tag) == "sp"),
                     "tables": sum(1 for node in nodes if _localname(node.tag) == "tbl"),
-                    "text": "".join(text_runs),
+                    "text": "\n".join(text_runs),
                     "picture_geometries": pictures,
                     "shape_geometries": shapes,
                     "largest_picture_area_ratio": largest_picture_area_ratio,

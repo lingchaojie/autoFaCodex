@@ -60,6 +60,7 @@ class ValidatorIssue(ContractModel):
     suggested_action: str
     region: IssueRegion | None = None
     evidence_paths: list[str] = Field(default_factory=list)
+    repair_hints: dict = Field(default_factory=dict)
 
 
 class PageValidation(ContractModel):
