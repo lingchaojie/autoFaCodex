@@ -276,8 +276,6 @@ def _image_element(
     if source.startswith("objects/"):
         source = f"extracted/{source}"
     style = {}
-    if _is_background_bbox(bbox, page_width, page_height):
-        style["role"] = "background"
     if block.get("content_hash"):
         style["content_hash"] = str(block["content_hash"])
     element = SlideElement(
@@ -528,13 +526,19 @@ def _apply_dominant_background_strategy(
 
     dominant = dominant_entry[2]
     duplicate_fragment_keys = _duplicate_background_fragment_keys(positioned, dominant, size)
+    dominant_area_ratio = _element_area_ratio_on_slide(dominant, size)
+    has_editable_foreground = _has_editable_foreground(positioned, dominant_entry)
+    if (
+        dominant_area_ratio >= BACKGROUND_ROLE_MIN_AREA_RATIO
+        and has_editable_foreground
+    ):
+        dominant.style = {**dominant.style, "role": "background"}
     if not duplicate_fragment_keys:
         return positioned
 
-    dominant_area_ratio = _element_area_ratio_on_slide(dominant, size)
     if (
         dominant_area_ratio >= DOMINANT_BACKGROUND_MIN_AREA_RATIO
-        and _has_editable_foreground(positioned, dominant_entry)
+        and has_editable_foreground
     ):
         dominant.style = {**dominant.style, "role": "background"}
     kept: list[tuple[int, int, SlideElement]] = []
