@@ -1179,6 +1179,12 @@ def test_build_initial_slide_model_suppresses_fragments_inside_dominant_backgrou
                             "seqno": 2,
                         },
                         {
+                            "type": "image",
+                            "bbox": [320, 220, 460, 340],
+                            "source": "objects/images/page-001-image-mask.png",
+                            "seqno": 3,
+                        },
+                        {
                             "type": "text",
                             "bbox": [72, 80, 360, 110],
                             "lines": [
@@ -1200,19 +1206,11 @@ def test_build_initial_slide_model_suppresses_fragments_inside_dominant_backgrou
                         {
                             "type": "image",
                             "bbox": [20, 20, 80, 80],
-                            "source": "objects/images/page-001-image-003.png",
+                            "source": "objects/images/page-001-image-004.png",
                             "seqno": 5,
                         },
                     ],
-                    "drawings": [
-                        {
-                            "shape": "rect",
-                            "bbox": [350, 260, 450, 300],
-                            "fill": "#DDDDDD",
-                            "stroke": "#DDDDDD",
-                            "seqno": 3,
-                        }
-                    ],
+                    "drawings": [],
                 }
             ]
         }
@@ -1221,13 +1219,51 @@ def test_build_initial_slide_model_suppresses_fragments_inside_dominant_backgrou
     elements = model.slides[0].elements
     assert [element.id for element in elements] == [
         "p1-image-1",
+        "p1-image-2",
         "p1-text-1",
-        "p1-image-3",
+        "p1-image-4",
     ]
     assert elements[0].style["role"] == "background"
-    assert elements[1].type == "text"
-    assert elements[1].text == "Foreground Title"
-    assert elements[2].source == "extracted/objects/images/page-001-image-003.png"
+    assert elements[1].source == "extracted/objects/images/page-001-image-002.png"
+    assert "role" not in elements[1].style
+    assert elements[2].type == "text"
+    assert elements[2].text == "Foreground Title"
+    assert elements[3].source == "extracted/objects/images/page-001-image-004.png"
+
+
+def test_build_initial_slide_model_keeps_unique_foreground_fragment_inside_dominant_background_image():
+    model = build_initial_slide_model(
+        {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "width": 960,
+                    "height": 540,
+                    "text": "",
+                    "text_blocks": [
+                        {
+                            "type": "image",
+                            "bbox": [0, 60, 960, 540],
+                            "source": "objects/images/page-001-image-001.png",
+                            "seqno": 1,
+                        },
+                        {
+                            "type": "image",
+                            "bbox": [320, 220, 460, 340],
+                            "source": "objects/images/page-001-image-002.png",
+                            "seqno": 2,
+                        },
+                    ],
+                    "drawings": [],
+                }
+            ]
+        }
+    )
+
+    elements = model.slides[0].elements
+    assert [element.id for element in elements] == ["p1-image-1", "p1-image-2"]
+    assert elements[0].style["role"] == "background"
+    assert "role" not in elements[1].style
 
 
 def test_build_initial_slide_model_suppresses_line_fragments_inside_dominant_background_image():
@@ -1258,11 +1294,35 @@ def test_build_initial_slide_model_suppresses_line_fragments_inside_dominant_bac
                         },
                         {
                             "shape": "line",
+                            "p1": [120, 180],
+                            "p2": [420, 180],
+                            "bbox": [120, 180, 420, 180],
+                            "stroke": "#DDDDDD",
+                            "seqno": 3,
+                        },
+                        {
+                            "shape": "line",
                             "p1": [480, 180],
                             "p2": [480, 360],
                             "bbox": [480, 180, 480, 360],
                             "stroke": "#DDDDDD",
-                            "seqno": 3,
+                            "seqno": 4,
+                        },
+                        {
+                            "shape": "line",
+                            "p1": [480, 180],
+                            "p2": [480, 360],
+                            "bbox": [480, 180, 480, 360],
+                            "stroke": "#DDDDDD",
+                            "seqno": 5,
+                        },
+                        {
+                            "shape": "line",
+                            "p1": [160, 420],
+                            "p2": [360, 420],
+                            "bbox": [160, 420, 360, 420],
+                            "stroke": "#DDDDDD",
+                            "seqno": 6,
                         },
                     ],
                 }
@@ -1270,7 +1330,12 @@ def test_build_initial_slide_model_suppresses_line_fragments_inside_dominant_bac
         }
     )
 
-    assert [element.id for element in model.slides[0].elements] == ["p1-image-1"]
+    assert [element.id for element in model.slides[0].elements] == [
+        "p1-image-1",
+        "p1-shape-1",
+        "p1-shape-3",
+        "p1-shape-5",
+    ]
     assert model.slides[0].elements[0].style["role"] == "background"
 
 

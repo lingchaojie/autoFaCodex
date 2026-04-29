@@ -395,7 +395,7 @@ def _dominant_background_entry(
     return max(candidates, key=lambda entry: _element_area_ratio_on_slide(entry[2], size))
 
 
-def _should_suppress_background_fragment(
+def _is_background_fragment_candidate(
     element: SlideElement,
     dominant_background: SlideElement,
     size: SlideSize,
@@ -416,6 +416,30 @@ def _should_suppress_background_fragment(
     )
 
 
+def _background_fragment_key(
+    element: SlideElement,
+) -> tuple[str, str | None, tuple[float, ...]]:
+    shape_type = None
+    if element.type == "shape":
+        shape_type = str(element.style.get("shape", ""))
+    return (
+        element.type,
+        shape_type,
+        tuple(round(value, 4) for value in _element_bbox(element)),
+    )
+
+
+def _is_duplicate_background_fragment(
+    element: SlideElement,
+    kept_fragment_keys: set[tuple[str, str | None, tuple[float, ...]]],
+    dominant_background: SlideElement,
+    size: SlideSize,
+) -> bool:
+    if not _is_background_fragment_candidate(element, dominant_background, size):
+        return False
+    return _background_fragment_key(element) in kept_fragment_keys
+
+
 def _apply_dominant_background_strategy(
     positioned: list[tuple[int, int, SlideElement]],
     size: SlideSize,
@@ -426,11 +450,16 @@ def _apply_dominant_background_strategy(
 
     dominant = dominant_entry[2]
     dominant.style = {**dominant.style, "role": "background"}
-    return [
-        entry
-        for entry in positioned
-        if not _should_suppress_background_fragment(entry[2], dominant, size)
-    ]
+    kept: list[tuple[int, int, SlideElement]] = []
+    kept_fragment_keys: set[tuple[str, str | None, tuple[float, ...]]] = set()
+    for entry in sorted(positioned, key=lambda item: (item[0], item[1])):
+        element = entry[2]
+        if _is_duplicate_background_fragment(element, kept_fragment_keys, dominant, size):
+            continue
+        if _is_background_fragment_candidate(element, dominant, size):
+            kept_fragment_keys.add(_background_fragment_key(element))
+        kept.append(entry)
+    return kept
 
 
 def _center_in_bbox(element: SlideElement, bbox: list[float]) -> bool:
