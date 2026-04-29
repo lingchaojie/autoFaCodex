@@ -376,7 +376,7 @@ def _containment_ratio(outer: list[float], inner: list[float]) -> float:
     intersection = max(0.0, right - left) * max(0.0, bottom - top)
     inner_area = max(0.0, inner[2] - inner[0]) * max(0.0, inner[3] - inner[1])
     if inner_area <= 0:
-        return 0.0
+        return 1.0 if _contains_bbox(outer, inner) else 0.0
     return intersection / inner_area
 
 
