@@ -42,19 +42,25 @@ Create and work in an isolated branch:
 - Branch: `feature/pdf-ppt-next-baseline`
 - Base: `feature/maple-ideal-reverse`
 - Worktree: `.worktrees/pdf-ppt-next-baseline`
+- Sample source root: `/home/alvin/AutoFaCodex/pdf-to-ppt`
 
 This keeps the next-sample baseline dependent on PR #3 intentionally and makes
-the dependency visible in branch history.
+the dependency visible in branch history. The sample source root is an
+untracked user data directory in the main checkout, so the baseline worktree
+must read the PDFs and ideal PPTX files from that absolute path instead of
+expecting them to exist inside the worktree.
 
 ## Data Flow
 
-1. Discover the two candidate PDF files from `pdf-to-ppt/pdf-source`.
+1. Discover the two candidate PDF files from
+   `/home/alvin/AutoFaCodex/pdf-to-ppt/pdf-source`.
 2. Create one task directory per sample under `shared-tasks/`.
 3. Copy each PDF to `input.pdf`.
 4. Run `run_pdf_to_ppt(task_dir)`.
 5. Read the latest `validator.v*.json`.
 6. Compare `output/final.pptx` to the matching ideal PPTX from
-   `pdf-to-ppt/example-output` with `compare_pptx_structure`.
+   `/home/alvin/AutoFaCodex/pdf-to-ppt/example-output` with
+   `compare_pptx_structure`.
 7. Write per-sample reports plus one archive summary.
 
 ## Ranking Criteria
