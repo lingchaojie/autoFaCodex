@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 
 from pptx import Presentation
@@ -36,13 +37,95 @@ def _profile_by_page(profile: dict) -> dict[int, dict]:
 
 def _profile_number(page: dict, field: str) -> float:
     try:
-        return float(page.get(field, 0) or 0)
-    except (TypeError, ValueError):
+        number = float(page.get(field, 0) or 0)
+    except (OverflowError, TypeError, ValueError):
         return 0.0
+    if not math.isfinite(number):
+        return 0.0
+    return number
 
 
 def _profile_int(page: dict, field: str) -> int:
     return int(_profile_number(page, field))
+
+
+def _geometry_list(page: dict, field: str) -> list[dict]:
+    geometries = page.get(field, [])
+    if not isinstance(geometries, list):
+        return []
+    return [geometry for geometry in geometries if isinstance(geometry, dict)]
+
+
+def _normalized_bbox(geometry: dict | None, size: dict) -> list[float] | None:
+    if geometry is None:
+        return None
+    width = _profile_number(size, "width")
+    height = _profile_number(size, "height")
+    if width <= 0 or height <= 0:
+        return None
+    try:
+        x = float(geometry.get("x", 0) or 0)
+        y = float(geometry.get("y", 0) or 0)
+        w = float(geometry.get("w", 0) or 0)
+        h = float(geometry.get("h", 0) or 0)
+    except (OverflowError, TypeError, ValueError):
+        return None
+    if not all(math.isfinite(value) for value in (x, y, w, h)):
+        return None
+    return [
+        round(x / width, 6),
+        round(y / height, 6),
+        round((x + w) / width, 6),
+        round((y + h) / height, 6),
+    ]
+
+
+def _bbox_mismatch_score(
+    generated_bbox: list[float] | None, ideal_bbox: list[float] | None
+) -> float:
+    if generated_bbox is None or ideal_bbox is None:
+        return 1.0
+    return round(max(abs(left - right) for left, right in zip(generated_bbox, ideal_bbox)), 6)
+
+
+def _top_geometry_mismatches(generated_page: dict, ideal_page: dict) -> list[dict]:
+    fields = (
+        ("picture", "picture_geometries"),
+        ("shape", "shape_geometries"),
+        ("text_box", "text_box_geometries"),
+    )
+    generated_size = (
+        generated_page.get("size") if isinstance(generated_page.get("size"), dict) else {}
+    )
+    ideal_size = ideal_page.get("size") if isinstance(ideal_page.get("size"), dict) else {}
+    mismatches = []
+    for kind, field in fields:
+        generated_geometries = _geometry_list(generated_page, field)
+        ideal_geometries = _geometry_list(ideal_page, field)
+        for index in range(max(len(generated_geometries), len(ideal_geometries))):
+            generated_bbox = _normalized_bbox(
+                generated_geometries[index] if index < len(generated_geometries) else None,
+                generated_size,
+            )
+            ideal_bbox = _normalized_bbox(
+                ideal_geometries[index] if index < len(ideal_geometries) else None,
+                ideal_size,
+            )
+            if generated_bbox == ideal_bbox:
+                continue
+            mismatches.append(
+                {
+                    "kind": kind,
+                    "index": index,
+                    "score": _bbox_mismatch_score(generated_bbox, ideal_bbox),
+                    "generated_bbox": generated_bbox,
+                    "ideal_bbox": ideal_bbox,
+                }
+            )
+    return sorted(
+        mismatches,
+        key=lambda item: (-item["score"], item["kind"], item["index"]),
+    )[:5]
 
 
 def _strategy_delta(generated_page: dict, ideal_page: dict) -> dict:
@@ -66,6 +149,7 @@ def _strategy_delta(generated_page: dict, ideal_page: dict) -> dict:
             - _profile_number(ideal_page, "picture_coverage_ratio"),
             6,
         ),
+        "top_geometry_mismatches": _top_geometry_mismatches(generated_page, ideal_page),
     }
 
 

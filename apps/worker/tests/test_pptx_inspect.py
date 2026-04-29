@@ -338,3 +338,15 @@ def test_inspect_pptx_ignores_orphan_slide_xml_when_display_order_resolves(
     inspection = inspect_pptx_editability(output)
 
     assert [page["slide"] for page in inspection["pages"]] == ["ppt/slides/slide1.xml"]
+
+
+def test_inspect_pptx_reports_slide_name_for_malformed_slide_xml(tmp_path: Path):
+    output = tmp_path / "malformed-slide.pptx"
+    presentation = Presentation()
+    blank = presentation.slide_layouts[6]
+    presentation.slides.add_slide(blank)
+    presentation.save(output)
+    _rewrite_pptx_entries(output, {"ppt/slides/slide1.xml": b"<slide>"})
+
+    with pytest.raises(RuntimeError, match="ppt/slides/slide1.xml"):
+        inspect_pptx_editability(output)

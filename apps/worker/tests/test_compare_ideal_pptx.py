@@ -80,3 +80,52 @@ def test_compare_pptx_structure_includes_strategy_deltas(tmp_path: Path, monkeyp
     assert page["text_box_count_delta"] == 5
     assert page["largest_picture_area_ratio_delta"] == -0.22
     assert page["picture_coverage_ratio_delta"] == -0.06
+
+
+def test_compare_pptx_structure_reports_top_geometry_mismatches(tmp_path: Path, monkeypatch):
+    generated = tmp_path / "generated.pptx"
+    ideal = tmp_path / "ideal.pptx"
+    _pptx(generated, ["Generated"])
+    _pptx(ideal, ["Ideal"])
+
+    profiles = {
+        generated: {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "size": {"width": 10, "height": 5},
+                    "picture_geometries": [{"x": 1, "y": 1, "w": 4, "h": 2}],
+                    "shape_geometries": [{"x": 0, "y": 0, "w": 1, "h": 1}],
+                    "text_box_geometries": [{"x": 2, "y": 2, "w": 2, "h": 1}],
+                }
+            ]
+        },
+        ideal: {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "size": {"width": 10, "height": 5},
+                    "picture_geometries": [{"x": 1, "y": 1, "w": 4, "h": 2}],
+                    "shape_geometries": [{"x": 5, "y": 0, "w": 1, "h": 1}],
+                    "text_box_geometries": [{"x": 2, "y": 3, "w": 2, "h": 1}],
+                }
+            ]
+        },
+    }
+    monkeypatch.setattr(
+        "autofacodex.evaluation.compare_ideal_pptx.profile_pptx_strategy",
+        lambda path: profiles[path],
+    )
+
+    result = compare_pptx_structure(generated, ideal)
+
+    mismatches = result["pages"][0]["top_geometry_mismatches"]
+    assert mismatches[0] == {
+        "kind": "shape",
+        "index": 0,
+        "score": 0.5,
+        "generated_bbox": [0.0, 0.0, 0.1, 0.2],
+        "ideal_bbox": [0.5, 0.0, 0.6, 0.2],
+    }
+    assert mismatches[1]["kind"] == "text_box"
+    assert mismatches[1]["score"] == 0.2

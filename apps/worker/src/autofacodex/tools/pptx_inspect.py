@@ -191,7 +191,10 @@ def inspect_pptx_editability(pptx_path: Path) -> dict:
         slide_names = _presentation_slide_names(archive, _sorted_slide_names(archive))
         pages = []
         for slide_name in slide_names:
-            root = ET.fromstring(archive.read(slide_name))
+            try:
+                root = ET.fromstring(archive.read(slide_name))
+            except ET.ParseError as exc:
+                raise RuntimeError(f"Failed to parse {pptx_path}: {slide_name}") from exc
             nodes = list(root.iter())
             picture_nodes = root.findall(".//p:pic", NS)
             shape_nodes = root.findall(".//p:sp", NS)

@@ -1176,12 +1176,14 @@ def test_build_initial_slide_model_suppresses_fragments_inside_dominant_backgrou
                             "type": "image",
                             "bbox": [320, 220, 460, 340],
                             "source": "objects/images/page-001-image-002.png",
+                            "content_hash": "duplicate-hash",
                             "seqno": 2,
                         },
                         {
                             "type": "image",
                             "bbox": [320, 220, 460, 340],
                             "source": "objects/images/page-001-image-mask.png",
+                            "content_hash": "duplicate-hash",
                             "seqno": 3,
                         },
                         {
@@ -1262,7 +1264,7 @@ def test_build_initial_slide_model_keeps_unique_foreground_fragment_inside_domin
 
     elements = model.slides[0].elements
     assert [element.id for element in elements] == ["p1-image-1", "p1-image-2"]
-    assert elements[0].style["role"] == "background"
+    assert "role" not in elements[0].style
     assert "role" not in elements[1].style
 
 
@@ -1362,7 +1364,7 @@ def test_build_initial_slide_model_suppresses_line_fragments_inside_dominant_bac
         "p1-shape-6",
         "p1-shape-7",
     ]
-    assert model.slides[0].elements[0].style["role"] == "background"
+    assert "role" not in model.slides[0].elements[0].style
 
 
 def test_build_initial_slide_model_keeps_large_foreground_image_inside_dominant_background():
@@ -1398,7 +1400,7 @@ def test_build_initial_slide_model_keeps_large_foreground_image_inside_dominant_
         "p1-image-1",
         "p1-image-2",
     ]
-    assert model.slides[0].elements[0].style["role"] == "background"
+    assert "role" not in model.slides[0].elements[0].style
     assert "role" not in model.slides[0].elements[1].style
 
 
@@ -1436,3 +1438,240 @@ def test_build_initial_slide_model_keeps_fragments_without_dominant_background_i
         "p1-image-2",
     ]
     assert "role" not in model.slides[0].elements[0].style
+
+
+def test_build_initial_slide_model_does_not_promote_large_foreground_image_without_duplicates():
+    model = build_initial_slide_model(
+        {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "width": 960,
+                    "height": 540,
+                    "text": "Foreground Title",
+                    "text_blocks": [
+                        {
+                            "type": "image",
+                            "bbox": [0, 60, 960, 540],
+                            "source": "objects/images/page-001-chart.png",
+                            "seqno": 1,
+                        },
+                        {
+                            "type": "text",
+                            "bbox": [72, 80, 360, 110],
+                            "lines": [
+                                {
+                                    "bbox": [72, 80, 360, 110],
+                                    "spans": [
+                                        {
+                                            "text": "Foreground Title",
+                                            "bbox": [72, 80, 360, 110],
+                                            "size": 24,
+                                            "seqno": 2,
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    ],
+                    "drawings": [],
+                }
+            ]
+        }
+    )
+
+    [image, text] = model.slides[0].elements
+    assert image.type == "image"
+    assert text.type == "text"
+    assert "role" not in image.style
+
+
+def test_build_initial_slide_model_keeps_same_geometry_images_with_different_sources():
+    model = build_initial_slide_model(
+        {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "width": 960,
+                    "height": 540,
+                    "text": "Foreground Title",
+                    "text_blocks": [
+                        {
+                            "type": "image",
+                            "bbox": [0, 60, 960, 540],
+                            "source": "objects/images/page-001-background.png",
+                            "seqno": 1,
+                        },
+                        {
+                            "type": "image",
+                            "bbox": [320, 220, 460, 340],
+                            "source": "objects/images/page-001-logo.png",
+                            "content_hash": "logo-hash",
+                            "seqno": 2,
+                        },
+                        {
+                            "type": "image",
+                            "bbox": [320, 220, 460, 340],
+                            "source": "objects/images/page-001-badge.png",
+                            "content_hash": "badge-hash",
+                            "seqno": 3,
+                        },
+                        {
+                            "type": "text",
+                            "bbox": [72, 80, 360, 110],
+                            "lines": [
+                                {
+                                    "bbox": [72, 80, 360, 110],
+                                    "spans": [
+                                        {
+                                            "text": "Foreground Title",
+                                            "bbox": [72, 80, 360, 110],
+                                            "size": 24,
+                                            "seqno": 4,
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    ],
+                    "drawings": [],
+                }
+            ]
+        }
+    )
+
+    assert [element.id for element in model.slides[0].elements] == [
+        "p1-image-1",
+        "p1-image-2",
+        "p1-image-3",
+        "p1-text-1",
+    ]
+
+
+def test_build_initial_slide_model_suppresses_same_geometry_images_with_same_content_hash():
+    model = build_initial_slide_model(
+        {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "width": 960,
+                    "height": 540,
+                    "text": "Foreground Title",
+                    "text_blocks": [
+                        {
+                            "type": "image",
+                            "bbox": [0, 60, 960, 540],
+                            "source": "objects/images/page-001-background.png",
+                            "seqno": 1,
+                        },
+                        {
+                            "type": "image",
+                            "bbox": [320, 220, 460, 340],
+                            "source": "objects/images/page-001-logo.png",
+                            "content_hash": "same-pixels",
+                            "seqno": 2,
+                        },
+                        {
+                            "type": "image",
+                            "bbox": [320, 220, 460, 340],
+                            "source": "objects/images/page-001-logo-copy.png",
+                            "content_hash": "same-pixels",
+                            "seqno": 3,
+                        },
+                        {
+                            "type": "text",
+                            "bbox": [72, 80, 360, 110],
+                            "lines": [
+                                {
+                                    "bbox": [72, 80, 360, 110],
+                                    "spans": [
+                                        {
+                                            "text": "Foreground Title",
+                                            "bbox": [72, 80, 360, 110],
+                                            "size": 24,
+                                            "seqno": 4,
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    ],
+                    "drawings": [],
+                }
+            ]
+        }
+    )
+
+    assert [element.id for element in model.slides[0].elements] == [
+        "p1-image-1",
+        "p1-image-2",
+        "p1-text-1",
+    ]
+    assert model.slides[0].elements[0].style["role"] == "background"
+
+
+def test_build_initial_slide_model_keeps_same_geometry_lines_with_different_style():
+    model = build_initial_slide_model(
+        {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "width": 960,
+                    "height": 540,
+                    "text": "Foreground Title",
+                    "text_blocks": [
+                        {
+                            "type": "image",
+                            "bbox": [0, 60, 960, 540],
+                            "source": "objects/images/page-001-background.png",
+                            "seqno": 1,
+                        },
+                        {
+                            "type": "text",
+                            "bbox": [72, 80, 360, 110],
+                            "lines": [
+                                {
+                                    "bbox": [72, 80, 360, 110],
+                                    "spans": [
+                                        {
+                                            "text": "Foreground Title",
+                                            "bbox": [72, 80, 360, 110],
+                                            "size": 24,
+                                            "seqno": 4,
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    ],
+                    "drawings": [
+                        {
+                            "shape": "line",
+                            "p1": [120, 180],
+                            "p2": [420, 180],
+                            "bbox": [120, 180, 420, 180],
+                            "stroke": "#DDDDDD",
+                            "stroke_width": 1,
+                            "seqno": 2,
+                        },
+                        {
+                            "shape": "line",
+                            "p1": [120, 180],
+                            "p2": [420, 180],
+                            "bbox": [120, 180, 420, 180],
+                            "stroke": "#336699",
+                            "stroke_width": 2,
+                            "seqno": 3,
+                        },
+                    ],
+                }
+            ]
+        }
+    )
+
+    assert [element.id for element in model.slides[0].elements] == [
+        "p1-image-1",
+        "p1-shape-1",
+        "p1-shape-2",
+        "p1-text-1",
+    ]

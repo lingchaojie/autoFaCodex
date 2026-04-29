@@ -1,3 +1,4 @@
+import hashlib
 import json
 from io import BytesIO
 from pathlib import Path
@@ -148,6 +149,15 @@ def _write_image_asset(
     image_path.parent.mkdir(parents=True, exist_ok=True)
     image_path.write_bytes(image_payload)
     return source
+
+
+def _image_content_hash(output_dir: Path, source: str | None) -> str | None:
+    if not source:
+        return None
+    image_path = output_dir / source
+    if not image_path.is_file():
+        return None
+    return hashlib.sha256(image_path.read_bytes()).hexdigest()
 
 
 def _prepare_display_image_payload(
@@ -466,6 +476,7 @@ def _image_block_metadata(
         block.get("transform"),
         bool(block.get("allow_reference_crop", True)),
     )
+    content_hash = _image_content_hash(output_dir, source)
     metadata = {
         "type": "image",
         "bbox": bbox,
@@ -478,6 +489,7 @@ def _image_block_metadata(
         "bpc": block.get("bpc"),
         "xref": xref,
         "source": source,
+        "content_hash": content_hash,
         "seqno": seqno,
     }
     return {key: value for key, value in metadata.items() if value is not None}

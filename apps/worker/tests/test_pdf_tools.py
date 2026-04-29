@@ -1,3 +1,4 @@
+import hashlib
 import json
 import math
 from io import BytesIO
@@ -103,6 +104,7 @@ def test_extract_pdf_with_image_writes_json_serializable_metadata(tmp_path: Path
     assert all("image" not in block for block in image_blocks)
     assert all(block["source"].startswith("objects/images/") for block in image_blocks)
     assert all((output_dir / block["source"]).is_file() for block in image_blocks)
+    assert all(block["content_hash"] for block in image_blocks)
 
 
 def test_extract_pdf_prefers_image_block_bytes_over_ambiguous_xrefs(tmp_path: Path):
@@ -135,6 +137,9 @@ def test_extract_pdf_prefers_image_block_bytes_over_ambiguous_xrefs(tmp_path: Pa
 
     extracted_image = Image.open(tmp_path / "extracted" / metadata["source"]).convert("RGB")
     assert extracted_image.getpixel((0, 0)) == (20, 140, 220)
+    assert metadata["content_hash"] == hashlib.sha256(
+        (tmp_path / "extracted" / metadata["source"]).read_bytes()
+    ).hexdigest()
     assert "xref" not in metadata
     assert image_xrefs == [99]
 

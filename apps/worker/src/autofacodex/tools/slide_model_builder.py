@@ -4,9 +4,17 @@ from autofacodex.contracts import SlideElement, SlideModel, SlideSize, SlideSpec
 
 DECK_WIDTH = 13.333
 DOMINANT_BACKGROUND_MIN_AREA_RATIO = 0.7
+BACKGROUND_ROLE_MIN_AREA_RATIO = 0.9
 SUPPRESSED_FRAGMENT_MAX_AREA_RATIO = 0.2
 SUPPRESSED_FRAGMENT_MIN_CONTAINMENT_RATIO = 0.95
 MISSING_SEQNO = 1_000_000_000
+BackgroundFragmentKey = tuple[
+    str,
+    str | None,
+    str | None,
+    tuple[tuple[str, object], ...],
+    tuple[float, ...],
+]
 WATERMARK_KEYWORDS = (
     "仅供",
     "内部参考",
@@ -65,7 +73,7 @@ def _area_ratio(bbox: list[float], page_width: float, page_height: float) -> flo
 
 
 def _is_background_bbox(bbox: list[float], page_width: float, page_height: float) -> bool:
-    return _area_ratio(bbox, page_width, page_height) >= 0.9
+    return _area_ratio(bbox, page_width, page_height) >= BACKGROUND_ROLE_MIN_AREA_RATIO
 
 
 def _point_coords(point: list[float], page_width: float, page_height: float, size: SlideSize) -> dict:
@@ -263,6 +271,8 @@ def _image_element(
     style = {}
     if _is_background_bbox(bbox, page_width, page_height):
         style["role"] = "background"
+    if block.get("content_hash"):
+        style["content_hash"] = str(block["content_hash"])
     element = SlideElement(
         id=f"p{page_number}-image-{image_index}",
         type="image",
@@ -418,8 +428,23 @@ def _is_background_fragment_candidate(
 
 def _background_fragment_key(
     element: SlideElement,
-) -> tuple[str, str | None, tuple[float, ...]]:
+) -> BackgroundFragmentKey:
     shape_type = None
+    source = (
+        str(element.style.get("content_hash") or element.source)
+        if element.type == "image"
+        else None
+    )
+    style_fields = (
+        "fill_color",
+        "fill_opacity",
+        "line_color",
+        "line_opacity",
+        "line_width",
+    )
+    style_key = tuple(
+        (field, element.style[field]) for field in style_fields if field in element.style
+    )
     if element.type == "shape":
         shape_type = str(element.style.get("shape", ""))
         if shape_type == "line":
@@ -436,23 +461,38 @@ def _background_fragment_key(
                 )
             )
             geometry = tuple(round(value, 4) for point in endpoints for value in point)
-            return (element.type, shape_type, geometry)
+            return (element.type, shape_type, source, style_key, geometry)
     return (
         element.type,
         shape_type,
+        source,
+        style_key,
         tuple(round(value, 4) for value in _element_bbox(element)),
     )
 
 
-def _is_duplicate_background_fragment(
-    element: SlideElement,
-    kept_fragment_keys: set[tuple[str, str | None, tuple[float, ...]]],
+def _duplicate_background_fragment_keys(
+    positioned: list[tuple[int, int, SlideElement]],
     dominant_background: SlideElement,
     size: SlideSize,
+) -> set[BackgroundFragmentKey]:
+    fragment_counts: dict[BackgroundFragmentKey, int] = {}
+    for _seq, _index, element in positioned:
+        if not _is_background_fragment_candidate(element, dominant_background, size):
+            continue
+        key = _background_fragment_key(element)
+        fragment_counts[key] = fragment_counts.get(key, 0) + 1
+    return {key for key, count in fragment_counts.items() if count > 1}
+
+
+def _has_editable_foreground(
+    positioned: list[tuple[int, int, SlideElement]],
+    dominant_background: SlideElement,
 ) -> bool:
-    if not _is_background_fragment_candidate(element, dominant_background, size):
-        return False
-    return _background_fragment_key(element) in kept_fragment_keys
+    return any(
+        element.id != dominant_background.id and element.type in {"text", "table"}
+        for _seq, _index, element in positioned
+    )
 
 
 def _apply_dominant_background_strategy(
@@ -464,15 +504,26 @@ def _apply_dominant_background_strategy(
         return positioned
 
     dominant = dominant_entry[2]
-    dominant.style = {**dominant.style, "role": "background"}
+    duplicate_fragment_keys = _duplicate_background_fragment_keys(positioned, dominant, size)
+    if not duplicate_fragment_keys:
+        return positioned
+
+    dominant_area_ratio = _element_area_ratio_on_slide(dominant, size)
+    if (
+        dominant_area_ratio >= DOMINANT_BACKGROUND_MIN_AREA_RATIO
+        and _has_editable_foreground(positioned, dominant)
+    ):
+        dominant.style = {**dominant.style, "role": "background"}
     kept: list[tuple[int, int, SlideElement]] = []
-    kept_fragment_keys: set[tuple[str, str | None, tuple[float, ...]]] = set()
+    kept_fragment_keys: set[BackgroundFragmentKey] = set()
     for entry in sorted(positioned, key=lambda item: (item[0], item[1])):
         element = entry[2]
-        if _is_duplicate_background_fragment(element, kept_fragment_keys, dominant, size):
-            continue
         if _is_background_fragment_candidate(element, dominant, size):
-            kept_fragment_keys.add(_background_fragment_key(element))
+            key = _background_fragment_key(element)
+            if key in duplicate_fragment_keys:
+                if key in kept_fragment_keys:
+                    continue
+                kept_fragment_keys.add(key)
         kept.append(entry)
     return kept
 
