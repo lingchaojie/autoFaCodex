@@ -1,3 +1,4 @@
+import math
 import posixpath
 import re
 import xml.etree.ElementTree as ET
@@ -79,10 +80,7 @@ def _presentation_slide_names(archive: ZipFile, slide_names: list[str]) -> list[
     if not ordered_slide_names:
         return slide_names
 
-    ordered_slide_name_set = set(ordered_slide_names)
-    return ordered_slide_names + [
-        slide_name for slide_name in slide_names if slide_name not in ordered_slide_name_set
-    ]
+    return ordered_slide_names
 
 
 def _emu(value: str | None) -> float:
@@ -90,13 +88,24 @@ def _emu(value: str | None) -> float:
 
 
 def _presentation_size(archive: ZipFile) -> tuple[float, float]:
+    default_size = (10.0, 7.5)
     if "ppt/presentation.xml" not in archive.namelist():
-        return (10.0, 7.5)
-    root = ET.fromstring(archive.read("ppt/presentation.xml"))
+        return default_size
+    try:
+        root = ET.fromstring(archive.read("ppt/presentation.xml"))
+    except ET.ParseError:
+        return default_size
     size = root.find(".//p:sldSz", NS)
     if size is None:
-        return (10.0, 7.5)
-    return (_emu(size.attrib.get("cx")), _emu(size.attrib.get("cy")))
+        return default_size
+    try:
+        width = _emu(size.attrib.get("cx"))
+        height = _emu(size.attrib.get("cy"))
+    except (TypeError, ValueError, OverflowError):
+        return default_size
+    if not math.isfinite(width) or not math.isfinite(height) or width <= 0 or height <= 0:
+        return default_size
+    return (width, height)
 
 
 def _geometry(node: ET.Element) -> dict[str, float]:

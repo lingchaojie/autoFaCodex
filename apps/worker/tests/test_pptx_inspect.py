@@ -15,6 +15,20 @@ def _model(slide: dict) -> SlideModel:
     return SlideModel(slides=[slide])
 
 
+def _rewrite_pptx_entries(path: Path, updates: dict[str, bytes]) -> None:
+    with ZipFile(path) as source:
+        entries = {
+            item.filename: source.read(item.filename)
+            for item in source.infolist()
+            if not item.is_dir()
+        }
+    entries.update(updates)
+
+    with ZipFile(path, "w", ZIP_DEFLATED) as target:
+        for name, data in entries.items():
+            target.writestr(name, data)
+
+
 def _swap_presentation_slide_order(path: Path) -> None:
     xml_name = "ppt/presentation.xml"
     p_ns = "http://schemas.openxmlformats.org/presentationml/2006/main"
@@ -23,23 +37,60 @@ def _swap_presentation_slide_order(path: Path) -> None:
     ET.register_namespace("r", r_ns)
 
     with ZipFile(path) as source:
-        entries = {
-            item.filename: source.read(item.filename)
-            for item in source.infolist()
-            if not item.is_dir()
-        }
-
-    root = ET.fromstring(entries[xml_name])
+        presentation_xml = source.read(xml_name)
+    root = ET.fromstring(presentation_xml)
     slide_id_list = root.find(f".//{{{p_ns}}}sldIdLst")
     assert slide_id_list is not None
     slide_ids = list(slide_id_list)
     assert len(slide_ids) == 2
     slide_id_list[:] = [slide_ids[1], slide_ids[0]]
-    entries[xml_name] = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    _rewrite_pptx_entries(
+        path,
+        {xml_name: ET.tostring(root, encoding="utf-8", xml_declaration=True)},
+    )
 
-    with ZipFile(path, "w", ZIP_DEFLATED) as target:
-        for name, data in entries.items():
-            target.writestr(name, data)
+
+def _add_orphan_slide(path: Path) -> None:
+    rels_name = "ppt/_rels/presentation.xml.rels"
+    content_types_name = "[Content_Types].xml"
+    rels_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+    content_types_ns = "http://schemas.openxmlformats.org/package/2006/content-types"
+    ET.register_namespace("", rels_ns)
+
+    with ZipFile(path) as source:
+        slide_xml = source.read("ppt/slides/slide1.xml")
+        rels_xml = source.read(rels_name)
+        content_types_xml = source.read(content_types_name)
+
+    rels_root = ET.fromstring(rels_xml)
+    ET.SubElement(
+        rels_root,
+        f"{{{rels_ns}}}Relationship",
+        {
+            "Id": "rId999",
+            "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide",
+            "Target": "slides/slide99.xml",
+        },
+    )
+    content_types_root = ET.fromstring(content_types_xml)
+    ET.SubElement(
+        content_types_root,
+        f"{{{content_types_ns}}}Override",
+        {
+            "PartName": "/ppt/slides/slide99.xml",
+            "ContentType": "application/vnd.openxmlformats-officedocument.presentationml.slide+xml",
+        },
+    )
+    _rewrite_pptx_entries(
+        path,
+        {
+            "ppt/slides/slide99.xml": slide_xml,
+            rels_name: ET.tostring(rels_root, encoding="utf-8", xml_declaration=True),
+            content_types_name: ET.tostring(
+                content_types_root, encoding="utf-8", xml_declaration=True
+            ),
+        },
+    )
 
 
 def test_inspect_pptx_returns_editable_text_content(tmp_path: Path):
@@ -252,3 +303,38 @@ def test_inspect_pptx_uses_presentation_slide_order(tmp_path: Path):
         "ppt/slides/slide1.xml",
     ]
     assert [page["shapes"] for page in inspection["pages"]] == display_shape_counts
+
+
+def test_inspect_pptx_uses_numeric_fallback_when_presentation_xml_is_malformed(
+    tmp_path: Path,
+):
+    output = tmp_path / "malformed-presentation.pptx"
+    presentation = Presentation()
+    blank = presentation.slide_layouts[6]
+    slide = presentation.slides.add_slide(blank)
+    slide.shapes.add_textbox(914400, 914400, 914400, 914400).text = "Still readable"
+    presentation.save(output)
+    _rewrite_pptx_entries(output, {"ppt/presentation.xml": b"<presentation>"})
+
+    inspection = inspect_pptx_editability(output)
+
+    assert [page["slide"] for page in inspection["pages"]] == ["ppt/slides/slide1.xml"]
+    page = inspection["pages"][0]
+    assert page["size"] == {"width": 10.0, "height": 7.5}
+    assert page["text"] == "Still readable"
+
+
+def test_inspect_pptx_ignores_orphan_slide_xml_when_display_order_resolves(
+    tmp_path: Path,
+):
+    output = tmp_path / "orphan-slide.pptx"
+    presentation = Presentation()
+    blank = presentation.slide_layouts[6]
+    slide = presentation.slides.add_slide(blank)
+    slide.shapes.add_textbox(914400, 914400, 914400, 914400).text = "Displayed"
+    presentation.save(output)
+    _add_orphan_slide(output)
+
+    inspection = inspect_pptx_editability(output)
+
+    assert [page["slide"] for page in inspection["pages"]] == ["ppt/slides/slide1.xml"]
