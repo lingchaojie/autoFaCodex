@@ -1,7 +1,10 @@
+import xml.etree.ElementTree as ET
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 from PIL import Image
+from pptx import Presentation
 
 from autofacodex.contracts import SlideModel
 from autofacodex.tools.pptx_generate import generate_pptx
@@ -10,6 +13,33 @@ from autofacodex.tools.pptx_inspect import inspect_pptx_editability
 
 def _model(slide: dict) -> SlideModel:
     return SlideModel(slides=[slide])
+
+
+def _swap_presentation_slide_order(path: Path) -> None:
+    xml_name = "ppt/presentation.xml"
+    p_ns = "http://schemas.openxmlformats.org/presentationml/2006/main"
+    r_ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    ET.register_namespace("p", p_ns)
+    ET.register_namespace("r", r_ns)
+
+    with ZipFile(path) as source:
+        entries = {
+            item.filename: source.read(item.filename)
+            for item in source.infolist()
+            if not item.is_dir()
+        }
+
+    root = ET.fromstring(entries[xml_name])
+    slide_id_list = root.find(f".//{{{p_ns}}}sldIdLst")
+    assert slide_id_list is not None
+    slide_ids = list(slide_id_list)
+    assert len(slide_ids) == 2
+    slide_id_list[:] = [slide_ids[1], slide_ids[0]]
+    entries[xml_name] = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+    with ZipFile(path, "w", ZIP_DEFLATED) as target:
+        for name, data in entries.items():
+            target.writestr(name, data)
 
 
 def test_inspect_pptx_returns_editable_text_content(tmp_path: Path):
@@ -194,3 +224,31 @@ def test_inspect_pptx_reports_text_box_count_and_geometries(tmp_path: Path):
         {"x": pytest.approx(1), "y": pytest.approx(1), "w": pytest.approx(4), "h": pytest.approx(0.6)},
         {"x": pytest.approx(2), "y": pytest.approx(2), "w": pytest.approx(3), "h": pytest.approx(0.4)},
     ]
+
+
+def test_inspect_pptx_uses_presentation_slide_order(tmp_path: Path):
+    output = tmp_path / "swapped-order.pptx"
+    presentation = Presentation()
+    blank = presentation.slide_layouts[6]
+    slide_one = presentation.slides.add_slide(blank)
+    slide_one.shapes.add_textbox(914400, 914400, 914400, 914400).text = "First XML"
+    slide_two = presentation.slides.add_slide(blank)
+    for index in range(20):
+        slide_two.shapes.add_textbox(
+            914400,
+            914400 + index * 10000,
+            914400,
+            914400,
+        ).text = f"Second XML {index}"
+    presentation.save(output)
+    _swap_presentation_slide_order(output)
+
+    display_shape_counts = [len(slide.shapes) for slide in Presentation(output).slides]
+    inspection = inspect_pptx_editability(output)
+
+    assert display_shape_counts == [20, 1]
+    assert [page["slide"] for page in inspection["pages"]] == [
+        "ppt/slides/slide2.xml",
+        "ppt/slides/slide1.xml",
+    ]
+    assert [page["shapes"] for page in inspection["pages"]] == display_shape_counts

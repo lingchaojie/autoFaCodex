@@ -1,3 +1,4 @@
+import posixpath
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -5,9 +6,12 @@ from zipfile import ZipFile
 
 
 SLIDE_XML_RE = re.compile(r"^ppt/slides/slide\d+\.xml$")
+OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 NS = {
     "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
     "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+    "r": OFFICE_REL_NS,
 }
 EMU_PER_INCH = 914400
 
@@ -18,6 +22,67 @@ def _localname(tag: str) -> str:
 
 def _slide_number(slide_name: str) -> int:
     return int(slide_name.removeprefix("ppt/slides/slide").removesuffix(".xml"))
+
+
+def _sorted_slide_names(archive: ZipFile) -> list[str]:
+    return sorted(
+        (name for name in archive.namelist() if SLIDE_XML_RE.fullmatch(name)),
+        key=_slide_number,
+    )
+
+
+def _normalize_relationship_target(target: str) -> str:
+    target = target.replace("\\", "/")
+    if target.startswith("/"):
+        return posixpath.normpath(target.lstrip("/"))
+    if target.startswith("ppt/"):
+        return posixpath.normpath(target)
+    return posixpath.normpath(posixpath.join("ppt", target))
+
+
+def _presentation_relationship_targets(archive: ZipFile) -> dict[str, str] | None:
+    relationship_name = "ppt/_rels/presentation.xml.rels"
+    if relationship_name not in archive.namelist():
+        return None
+    root = ET.fromstring(archive.read(relationship_name))
+    relationships = {}
+    for relationship in root.findall(f"{{{PACKAGE_REL_NS}}}Relationship"):
+        relationship_id = relationship.attrib.get("Id")
+        target = relationship.attrib.get("Target")
+        if relationship_id and target:
+            relationships[relationship_id] = _normalize_relationship_target(target)
+    return relationships
+
+
+def _presentation_slide_names(archive: ZipFile, slide_names: list[str]) -> list[str]:
+    if "ppt/presentation.xml" not in archive.namelist():
+        return slide_names
+    try:
+        relationships = _presentation_relationship_targets(archive)
+        if not relationships:
+            return slide_names
+        root = ET.fromstring(archive.read("ppt/presentation.xml"))
+    except (ET.ParseError, KeyError):
+        return slide_names
+
+    slide_id_list = root.find(".//p:sldIdLst", NS)
+    if slide_id_list is None:
+        return slide_names
+
+    slide_name_set = set(slide_names)
+    ordered_slide_names = []
+    for slide_id in slide_id_list.findall("p:sldId", NS):
+        relationship_id = slide_id.attrib.get(f"{{{OFFICE_REL_NS}}}id")
+        target = relationships.get(relationship_id or "")
+        if target in slide_name_set and target not in ordered_slide_names:
+            ordered_slide_names.append(target)
+    if not ordered_slide_names:
+        return slide_names
+
+    ordered_slide_name_set = set(ordered_slide_names)
+    return ordered_slide_names + [
+        slide_name for slide_name in slide_names if slide_name not in ordered_slide_name_set
+    ]
 
 
 def _emu(value: str | None) -> float:
@@ -114,10 +179,7 @@ def _coverage_ratio(
 def inspect_pptx_editability(pptx_path: Path) -> dict:
     with ZipFile(pptx_path) as archive:
         slide_width, slide_height = _presentation_size(archive)
-        slide_names = sorted(
-            (name for name in archive.namelist() if SLIDE_XML_RE.fullmatch(name)),
-            key=_slide_number,
-        )
+        slide_names = _presentation_slide_names(archive, _sorted_slide_names(archive))
         pages = []
         for slide_name in slide_names:
             root = ET.fromstring(archive.read(slide_name))
