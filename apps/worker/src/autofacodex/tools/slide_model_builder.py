@@ -3,6 +3,9 @@ import math
 from autofacodex.contracts import SlideElement, SlideModel, SlideSize, SlideSpec
 
 DECK_WIDTH = 13.333
+DOMINANT_BACKGROUND_MIN_AREA_RATIO = 0.7
+SUPPRESSED_FRAGMENT_MAX_AREA_RATIO = 0.2
+SUPPRESSED_FRAGMENT_MIN_CONTAINMENT_RATIO = 0.95
 MISSING_SEQNO = 1_000_000_000
 WATERMARK_KEYWORDS = (
     "仅供",
@@ -352,6 +355,84 @@ def _contains_bbox(outer: list[float], inner: list[float], tolerance: float = 0.
     )
 
 
+def _slide_area(size: SlideSize) -> float:
+    return float(size.width) * float(size.height)
+
+
+def _element_area_ratio_on_slide(element: SlideElement, size: SlideSize) -> float:
+    area = _slide_area(size)
+    if area <= 0:
+        return 0.0
+    return max(0.0, min(1.0, float(element.w) * float(element.h) / area))
+
+
+def _containment_ratio(outer: list[float], inner: list[float]) -> float:
+    if len(outer) != 4 or len(inner) != 4:
+        return 0.0
+    left = max(outer[0], inner[0])
+    top = max(outer[1], inner[1])
+    right = min(outer[2], inner[2])
+    bottom = min(outer[3], inner[3])
+    intersection = max(0.0, right - left) * max(0.0, bottom - top)
+    inner_area = max(0.0, inner[2] - inner[0]) * max(0.0, inner[3] - inner[1])
+    if inner_area <= 0:
+        return 0.0
+    return intersection / inner_area
+
+
+def _dominant_background_entry(
+    positioned: list[tuple[int, int, SlideElement]],
+    size: SlideSize,
+) -> tuple[int, int, SlideElement] | None:
+    candidates = [
+        entry
+        for entry in positioned
+        if entry[2].type == "image"
+        and _element_area_ratio_on_slide(entry[2], size) >= DOMINANT_BACKGROUND_MIN_AREA_RATIO
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda entry: _element_area_ratio_on_slide(entry[2], size))
+
+
+def _should_suppress_background_fragment(
+    element: SlideElement,
+    dominant_background: SlideElement,
+    size: SlideSize,
+) -> bool:
+    if element.id == dominant_background.id:
+        return False
+    if element.type in {"text", "table"}:
+        return False
+    if element.type not in {"image", "shape"}:
+        return False
+    if element.style.get("role") == "background":
+        return False
+    if _element_area_ratio_on_slide(element, size) > SUPPRESSED_FRAGMENT_MAX_AREA_RATIO:
+        return False
+    return (
+        _containment_ratio(_element_bbox(dominant_background), _element_bbox(element))
+        >= SUPPRESSED_FRAGMENT_MIN_CONTAINMENT_RATIO
+    )
+
+
+def _apply_dominant_background_strategy(
+    positioned: list[tuple[int, int, SlideElement]],
+    size: SlideSize,
+) -> list[tuple[int, int, SlideElement]]:
+    dominant_entry = _dominant_background_entry(positioned, size)
+    if dominant_entry is None:
+        return positioned
+
+    dominant = dominant_entry[2]
+    dominant.style = {**dominant.style, "role": "background"}
+    return [
+        entry
+        for entry in positioned
+        if not _should_suppress_background_fragment(entry[2], dominant, size)
+    ]
+
+
 def _center_in_bbox(element: SlideElement, bbox: list[float]) -> bool:
     cx = element.x + element.w / 2
     cy = element.y + element.h / 2
@@ -575,6 +656,7 @@ def _positioned_elements(
             image_index += 1
 
     positioned = _collapse_table_regions(page["page_number"], positioned)
+    positioned = _apply_dominant_background_strategy(positioned, size)
     positioned.sort(key=lambda item: (item[0], item[1]))
     return [element for _seq, _index, element in positioned]
 

@@ -1154,3 +1154,113 @@ def test_build_initial_slide_model_normalizes_extracted_image_sources_to_task_re
 def test_build_initial_slide_model_rejects_invalid_dimensions(page: dict, message: str):
     with pytest.raises(ValueError, match=message):
         build_initial_slide_model({"pages": [page]})
+
+
+def test_build_initial_slide_model_suppresses_fragments_inside_dominant_background_image():
+    model = build_initial_slide_model(
+        {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "width": 960,
+                    "height": 540,
+                    "text": "Foreground Title",
+                    "text_blocks": [
+                        {
+                            "type": "image",
+                            "bbox": [0, 60, 960, 540],
+                            "source": "objects/images/page-001-image-001.png",
+                            "seqno": 1,
+                        },
+                        {
+                            "type": "image",
+                            "bbox": [320, 220, 460, 340],
+                            "source": "objects/images/page-001-image-002.png",
+                            "seqno": 2,
+                        },
+                        {
+                            "type": "text",
+                            "bbox": [72, 80, 360, 110],
+                            "lines": [
+                                {
+                                    "bbox": [72, 80, 360, 110],
+                                    "spans": [
+                                        {
+                                            "text": "Foreground Title",
+                                            "bbox": [72, 80, 360, 110],
+                                            "font": "Helvetica",
+                                            "size": 24,
+                                            "color": 0,
+                                            "seqno": 4,
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                        {
+                            "type": "image",
+                            "bbox": [20, 20, 80, 80],
+                            "source": "objects/images/page-001-image-003.png",
+                            "seqno": 5,
+                        },
+                    ],
+                    "drawings": [
+                        {
+                            "shape": "rect",
+                            "bbox": [350, 260, 450, 300],
+                            "fill": "#DDDDDD",
+                            "stroke": "#DDDDDD",
+                            "seqno": 3,
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+
+    elements = model.slides[0].elements
+    assert [element.id for element in elements] == [
+        "p1-image-1",
+        "p1-text-1",
+        "p1-image-3",
+    ]
+    assert elements[0].style["role"] == "background"
+    assert elements[1].type == "text"
+    assert elements[1].text == "Foreground Title"
+    assert elements[2].source == "extracted/objects/images/page-001-image-003.png"
+
+
+def test_build_initial_slide_model_keeps_fragments_without_dominant_background_image():
+    model = build_initial_slide_model(
+        {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "width": 960,
+                    "height": 540,
+                    "text": "",
+                    "text_blocks": [
+                        {
+                            "type": "image",
+                            "bbox": [0, 60, 400, 300],
+                            "source": "objects/images/page-001-image-001.png",
+                            "seqno": 1,
+                        },
+                        {
+                            "type": "image",
+                            "bbox": [320, 220, 460, 340],
+                            "source": "objects/images/page-001-image-002.png",
+                            "seqno": 2,
+                        },
+                    ],
+                    "drawings": [],
+                }
+            ]
+        }
+    )
+
+    assert [element.id for element in model.slides[0].elements] == [
+        "p1-image-1",
+        "p1-image-2",
+    ]
+    assert "role" not in model.slides[0].elements[0].style
