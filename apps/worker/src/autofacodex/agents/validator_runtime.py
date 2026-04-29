@@ -1,6 +1,11 @@
 from autofacodex.contracts import PageValidation, ValidatorIssue, ValidatorReport
 
 
+def _aggregate_status(pages: list[PageValidation]) -> str:
+    priority = {"failed": 3, "repair_needed": 2, "manual_review": 1, "pass": 0}
+    return max((page.status for page in pages), key=lambda status: priority[status])
+
+
 def build_validator_report(
     task_id: str,
     attempt: int,
@@ -59,4 +64,9 @@ def build_validator_report(
                 issues=issues,
             )
         )
-    return ValidatorReport(task_id=task_id, attempt=attempt, pages=pages)
+    return ValidatorReport(
+        task_id=task_id,
+        attempt=attempt,
+        pages=pages,
+        aggregate_status=_aggregate_status(pages),
+    )

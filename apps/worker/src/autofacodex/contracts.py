@@ -59,6 +59,8 @@ class ValidatorIssue(ContractModel):
     message: str
     suggested_action: str
     region: IssueRegion | None = None
+    evidence_paths: list[str] = Field(default_factory=list)
+    repair_hints: dict = Field(default_factory=dict)
 
 
 class PageValidation(ContractModel):
@@ -69,9 +71,11 @@ class PageValidation(ContractModel):
     text_coverage_score: float = Field(ge=0, le=1)
     raster_fallback_ratio: float = Field(ge=0, le=1)
     issues: list[ValidatorIssue] = Field(default_factory=list)
+    evidence_paths: dict[str, str] = Field(default_factory=dict)
 
 
 class ValidatorReport(ContractModel):
     task_id: str
     attempt: int = Field(ge=1)
     pages: list[PageValidation]
+    aggregate_status: Literal["pass", "repair_needed", "manual_review", "failed"] | None = None

@@ -170,3 +170,99 @@ def test_validator_report_rejects_bad_issue_region_length(region: list[float]):
                 }
             ],
         )
+
+
+def test_validator_report_accepts_page_and_issue_evidence_paths():
+    report = ValidatorReport(
+        task_id="task_123",
+        attempt=1,
+        pages=[
+            {
+                "page_number": 1,
+                "status": "repair_needed",
+                "visual_score": 0.75,
+                "editable_score": 0.4,
+                "text_coverage_score": 0.9,
+                "raster_fallback_ratio": 0.6,
+                "evidence_paths": {
+                    "pdf_render": "renders/pdf/page-001.png",
+                    "ppt_render": "output/rendered-pages-v1/page-001.png",
+                    "diff": "output/diagnostics-v1/page-001-diff.png",
+                    "inspection": "reports/inspection.v1.json",
+                    "text_coverage": "reports/text-coverage.v1.json",
+                },
+                "issues": [
+                    {
+                        "type": "editability",
+                        "message": "Large raster region detected",
+                        "suggested_action": "Reconstruct visible text as editable text boxes",
+                        "evidence_paths": ["reports/inspection.v1.json"],
+                    }
+                ],
+            }
+        ],
+    )
+
+    page = report.pages[0]
+    assert page.evidence_paths["diff"] == "output/diagnostics-v1/page-001-diff.png"
+    assert page.issues[0].evidence_paths == ["reports/inspection.v1.json"]
+
+
+def test_validator_issue_accepts_region_evidence_and_action_hints():
+    report = ValidatorReport(
+        task_id="task_region",
+        attempt=2,
+        aggregate_status="manual_review",
+        pages=[
+            {
+                "page_number": 4,
+                "status": "manual_review",
+                "visual_score": 0.87,
+                "editable_score": 1.0,
+                "text_coverage_score": 1.0,
+                "raster_fallback_ratio": 0.0,
+                "issues": [
+                    {
+                        "type": "visual_fidelity",
+                        "message": "Largest diff region is shifted relative to source",
+                        "suggested_action": "adjust_bbox",
+                        "region": [0.12, 0.18, 0.42, 0.33],
+                        "evidence_paths": [
+                            "output/diagnostics-v2/page-004-diff.png",
+                            "output/diagnostics-v2/page-004-compare.png",
+                        ],
+                        "repair_hints": {
+                            "action": "adjust_bbox",
+                            "target_element_types": ["image", "shape", "text"],
+                            "max_delta_inches": 0.15,
+                        },
+                    }
+                ],
+            }
+        ],
+    )
+
+    issue = report.pages[0].issues[0]
+    assert issue.region == [0.12, 0.18, 0.42, 0.33]
+    assert issue.repair_hints["action"] == "adjust_bbox"
+
+
+def test_validator_report_accepts_aggregate_status():
+    report = ValidatorReport(
+        task_id="task_123",
+        attempt=1,
+        aggregate_status="repair_needed",
+        pages=[
+            {
+                "page_number": 1,
+                "status": "repair_needed",
+                "visual_score": 0.75,
+                "editable_score": 0.4,
+                "text_coverage_score": 0.9,
+                "raster_fallback_ratio": 0.6,
+                "issues": [],
+            }
+        ],
+    )
+
+    assert report.aggregate_status == "repair_needed"
