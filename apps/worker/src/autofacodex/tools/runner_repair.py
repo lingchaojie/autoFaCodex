@@ -46,6 +46,39 @@ def _element_area_ratio(element: dict[str, Any], slide: dict[str, Any]) -> float
     )
 
 
+def _opacity(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        opacity = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(1.0, opacity))
+
+
+def _is_visible_foreground_element(element: dict[str, Any]) -> bool:
+    style = element.get("style") or {}
+    if style.get("role") in {"watermark", "semantic_table"}:
+        return False
+    if _opacity(style.get("opacity")) == 0:
+        return False
+    if element.get("type") == "text":
+        return bool(str(element.get("text") or "").strip())
+    if element.get("type") == "table":
+        rows = style.get("rows", [])
+        if not isinstance(rows, list):
+            return False
+        return any(str(cell or "").strip() for row in rows for cell in row)
+    return False
+
+
+def _has_visible_foreground_after(slide: dict[str, Any], element_index: int) -> bool:
+    return any(
+        index > element_index and _is_visible_foreground_element(element)
+        for index, element in enumerate(slide.get("elements", []))
+    )
+
+
 def _page_is_safe_background_repair_candidate(page: Any) -> bool:
     if page.status not in {"repair_needed", "manual_review"}:
         return False
@@ -67,8 +100,8 @@ def _repair_large_background_images(
     actions: list[dict[str, Any]] = []
 
     image_candidates = [
-        (element, _element_area_ratio(element, slide))
-        for element in slide.get("elements", [])
+        (index, element, _element_area_ratio(element, slide))
+        for index, element in enumerate(slide.get("elements", []))
         if element.get("type") == "image"
     ]
 
@@ -87,22 +120,23 @@ def _repair_large_background_images(
             }
         )
 
-    for element, area_ratio in image_candidates:
-        if area_ratio >= min_area_ratio:
+    for index, element, area_ratio in image_candidates:
+        if area_ratio >= min_area_ratio and _has_visible_foreground_after(slide, index):
             mark_background(element, area_ratio, "mark_background_image")
 
     marked_area_ratio = sum(action["area_ratio"] for action in actions)
     grouped_candidates = sorted(
         [
-            (element, area_ratio)
-            for element, area_ratio in image_candidates
+            (index, element, area_ratio)
+            for index, element, area_ratio in image_candidates
             if area_ratio >= min_group_member_area_ratio
+            and _has_visible_foreground_after(slide, index)
         ],
-        key=lambda item: item[1],
+        key=lambda item: item[2],
         reverse=True,
     )
     if marked_area_ratio < target_group_area_ratio:
-        for element, area_ratio in grouped_candidates:
+        for _index, element, area_ratio in grouped_candidates:
             style = dict(element.get("style") or {})
             if style.get("role") == "background":
                 continue

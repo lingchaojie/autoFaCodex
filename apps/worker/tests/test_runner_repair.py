@@ -178,6 +178,82 @@ def test_deterministic_runner_repair_marks_grouped_images_as_background(
     assert result["changed_pages"] == [1]
 
 
+def test_deterministic_runner_repair_does_not_mark_background_without_visible_foreground(
+    tmp_path: Path, monkeypatch
+):
+    task_dir = tmp_path / "task_1"
+    task_dir.mkdir()
+    _write_repair_task(task_dir)
+    model = SlideModel.model_validate_json(
+        (task_dir / "slides" / "slide-model.v1.json").read_text(encoding="utf-8")
+    )
+    data = model.model_dump()
+    data["slides"][0]["elements"][1]["style"] = {"role": "watermark", "opacity": 0}
+    (task_dir / "slides" / "slide-model.v1.json").write_text(
+        SlideModel.model_validate(data).model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "autofacodex.tools.runner_repair.generate_pptx",
+        lambda _model, output_path, *, asset_root=None: output_path.write_bytes(b"pptx")
+        or output_path,
+    )
+
+    result = run_deterministic_runner_repair(
+        task_dir,
+        source_attempt=1,
+        target_attempt=2,
+        reason="runner_timeout",
+    )
+
+    repaired = SlideModel.model_validate_json(
+        (task_dir / "slides" / "slide-model.v2.json").read_text(encoding="utf-8")
+    )
+    assert "role" not in repaired.slides[0].elements[0].style
+    assert result["changed_pages"] == []
+
+
+def test_deterministic_runner_repair_does_not_mark_large_image_above_foreground(
+    tmp_path: Path, monkeypatch
+):
+    task_dir = tmp_path / "task_1"
+    task_dir.mkdir()
+    _write_repair_task(task_dir)
+    model = SlideModel.model_validate_json(
+        (task_dir / "slides" / "slide-model.v1.json").read_text(encoding="utf-8")
+    )
+    data = model.model_dump()
+    data["slides"][0]["elements"] = [
+        data["slides"][0]["elements"][1],
+        data["slides"][0]["elements"][0],
+    ]
+    (task_dir / "slides" / "slide-model.v1.json").write_text(
+        SlideModel.model_validate(data).model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "autofacodex.tools.runner_repair.generate_pptx",
+        lambda _model, output_path, *, asset_root=None: output_path.write_bytes(b"pptx")
+        or output_path,
+    )
+
+    result = run_deterministic_runner_repair(
+        task_dir,
+        source_attempt=1,
+        target_attempt=2,
+        reason="runner_timeout",
+    )
+
+    repaired = SlideModel.model_validate_json(
+        (task_dir / "slides" / "slide-model.v2.json").read_text(encoding="utf-8")
+    )
+    image = next(element for element in repaired.slides[0].elements if element.type == "image")
+    assert "role" not in image.style
+    assert result["changed_pages"] == []
+
+
 def test_deterministic_runner_repair_uses_validator_region_hints(
     tmp_path: Path, monkeypatch
 ):

@@ -1486,6 +1486,69 @@ def test_build_initial_slide_model_does_not_promote_large_foreground_image_witho
     assert "role" not in image.style
 
 
+def test_build_initial_slide_model_does_not_promote_background_with_only_hidden_watermark():
+    model = build_initial_slide_model(
+        {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "width": 960,
+                    "height": 540,
+                    "text": "仅供隐山资本参考",
+                    "text_blocks": [
+                        {
+                            "type": "image",
+                            "bbox": [0, 60, 960, 540],
+                            "source": "objects/images/page-001-background.png",
+                            "seqno": 1,
+                        },
+                        {
+                            "type": "image",
+                            "bbox": [320, 220, 460, 340],
+                            "source": "objects/images/page-001-logo.png",
+                            "content_hash": "same-pixels",
+                            "seqno": 2,
+                        },
+                        {
+                            "type": "image",
+                            "bbox": [320, 220, 460, 340],
+                            "source": "objects/images/page-001-logo-copy.png",
+                            "content_hash": "same-pixels",
+                            "seqno": 3,
+                        },
+                        {
+                            "type": "text",
+                            "bbox": [100, 100, 400, 400],
+                            "lines": [
+                                {
+                                    "bbox": [100, 100, 400, 400],
+                                    "dir": [0.70710678, -0.70710678],
+                                    "spans": [
+                                        {
+                                            "text": "仅供隐山资本参考",
+                                            "bbox": [100, 100, 400, 400],
+                                            "size": 40,
+                                            "color": 0xBFBFBF,
+                                            "seqno": 4,
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    ],
+                    "drawings": [],
+                }
+            ]
+        }
+    )
+
+    background = model.slides[0].elements[0]
+    watermark = next(element for element in model.slides[0].elements if element.type == "text")
+    assert watermark.style["role"] == "watermark"
+    assert watermark.style["opacity"] == 0
+    assert "role" not in background.style
+
+
 def test_build_initial_slide_model_keeps_same_geometry_images_with_different_sources():
     model = build_initial_slide_model(
         {

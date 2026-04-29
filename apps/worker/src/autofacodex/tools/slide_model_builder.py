@@ -8,6 +8,7 @@ BACKGROUND_ROLE_MIN_AREA_RATIO = 0.9
 SUPPRESSED_FRAGMENT_MAX_AREA_RATIO = 0.2
 SUPPRESSED_FRAGMENT_MIN_CONTAINMENT_RATIO = 0.95
 MISSING_SEQNO = 1_000_000_000
+HIDDEN_FOREGROUND_ROLES = {"watermark", "semantic_table"}
 BackgroundFragmentKey = tuple[
     str,
     str | None,
@@ -100,6 +101,12 @@ def _opacity(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
     return max(0.0, min(1.0, opacity))
+
+
+def _is_hidden_style(style: dict) -> bool:
+    if style.get("role") in HIDDEN_FOREGROUND_ROLES:
+        return True
+    return _opacity(style.get("opacity")) == 0
 
 
 def _hex_color(value: object) -> str | None:
@@ -489,8 +496,22 @@ def _has_editable_foreground(
     positioned: list[tuple[int, int, SlideElement]],
     dominant_background: SlideElement,
 ) -> bool:
+    def is_visible_foreground(element: SlideElement) -> bool:
+        if element.id == dominant_background.id:
+            return False
+        if _is_hidden_style(element.style):
+            return False
+        if element.type == "text":
+            return bool((element.text or "").strip())
+        if element.type == "table":
+            rows = element.style.get("rows", [])
+            if not isinstance(rows, list):
+                return False
+            return any(str(cell or "").strip() for row in rows for cell in row)
+        return False
+
     return any(
-        element.id != dominant_background.id and element.type in {"text", "table"}
+        is_visible_foreground(element)
         for _seq, _index, element in positioned
     )
 
